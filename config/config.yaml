@@ -6,6 +6,7 @@ defaults:
   - scheduler: none
   - mlflow: local
   - predict: default
+  - grpo: default
   - _self_
 
 mode: train

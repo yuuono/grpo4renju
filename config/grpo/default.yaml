@@ -1,0 +1,134 @@
+# GRPOの初期重みとして読み込む教師あり学習済みcheckpoint。
+checkpoint_path: null
+# state: data.csv.gz の各局面を独立に評価して更新する。
+# step_group: 開始局面から試合を進め、各局面で候補手groupを比較して更新する。
+# trajectory_group: 同じ開始局面から複数trajectoryを生成し、trajectory単位で比較して更新する。
+objective: state
+# state objectiveで1 updateに使う局面数。step_group/trajectory_groupでは主に prompts_per_step を使う。
+batch_size: 16
+# GRPO学習のepoch数。
+max_epochs: 1
+# nullならepoch分すべて実行。数値ならそのupdate回数で停止する。
+max_steps: null
+# 各局面でpolicyからサンプルする候補手数。同じ局面内の候補を比較してadvantageを作る。
+group_size: 8
+# policyから候補手をサンプルするときの温度。高いほど探索的、低いほど高確率手に寄る。
+# 低い: policyが元々高確率にしている手ばかり候補に出る
+# 高い: policyが低確率にしている手も候補に混ざる
+temperature: 1.0
+# 収集した同じサンプルに対して何回optimizer更新するか。
+update_epochs: 1
+# PPO/GRPO比率クリップ幅。policyがold policyから一度に動きすぎるのを抑える。
+clip_epsilon: 0.2
+# reference modelから離れすぎないためのKLペナルティ係数。
+kl_beta: 0.01
+# entropyボーナス係数。大きくすると手の分布を広げやすい。
+entropy_coef: 0.0
+# group内報酬を正規化するときのゼロ割防止値。
+advantage_epsilon: 1.0e-6
+# GRPO checkpointの保存先。train.output_root配下に作られる。
+checkpoint_dir: grpo_checkpoints
+# 最新checkpointのファイル名。
+checkpoint_name: latest_grpo_model.pt
+# 平均報酬が最良だったcheckpointのファイル名。
+best_checkpoint_name: best_grpo_model.pt
+# 標準出力/MLflowに何stepごとに主要メトリクスを出すか。
+log_every_steps: 10
+# nullまたは0以下なら無効。100なら step_000100_grpo_model.pt のように定期保存する。
+save_every_steps: 100
+
+tss:
+  # Pythonからctypesで読むTSS共有ライブラリのパス。例: ./tss.so
+  library_path: null
+  # 互換用の外部TSSコマンド。library_pathがある場合は共有ライブラリが優先される。
+  command: null
+  # 外部コマンド方式のタイムアウト秒。共有ライブラリ方式では基本使わない。
+  timeout_seconds: 5.0
+  # 深いTSS探索の最大深さ。大きいほど強制手順を深く読むが重くなる。
+  max_depth: 3
+  # TSS内部で展開する候補手上限。大きいほど広く読むが重くなる。
+  candidate_limit: 8
+  # 深いTSS評価のC++内並列数。0はCPUスレッド数に応じた自動、1は直列。
+  parallel_threads: 0
+  # trueならTSSライブラリ/コマンドが使えない場合にエラーで止める。
+  required: false
+  # trueならTSSが使えない場合にPythonの軽量形評価へフォールバックする。
+  use_fallback: true
+  # stagedは「まず軽く全候補を見る -> 有望/危険な候補だけ深く読む」ための設定。
+  staged:
+    # falseにすると全候補をmax_depthで深く評価する。
+    enabled: true
+    # stagedの軽い評価で使う浅い探索深さ。
+    shallow_depth: 1
+    # 深いTSSに進める候補数の上限。
+    deep_top_k: 2
+    # 浅い評価の報酬絶対値がこの値以上なら深いTSS候補にする。
+    deep_score_threshold: 0.3
+
+reward:
+  # 非合法手の報酬。
+  illegal: -1.0
+  # その手で即勝ちする場合の報酬。
+  immediate_win: 1.0
+  # その手が即負けになる場合の報酬。
+  immediate_loss: -1.0
+  # 相手に即勝ち手を許す場合のペナルティ。
+  allow_immediate_loss: -1.0
+  # 相手の即勝ち手をブロックした場合の小ボーナス。
+  block_immediate_win: 0.3
+  # TSSスコア全体に掛ける重み。
+  tss_weight: 1.0
+  # TSSが強制勝ちを見つけた場合のボーナス。
+  tss_forced_win: 0.7
+  # TSSが強制負けを見つけた場合のペナルティ。
+  tss_forced_loss: -0.7
+  # 四を作る手への小ボーナス。
+  create_four: 0.15
+  # 開三を作る手への小ボーナス。
+  create_open_three: 0.05
+
+step_group:
+  # self_play: 空盤面のみ。dataset: data.csv.gz復元局面。mixed: 空盤面+dataset局面。
+  source: self_play
+  # self: policyが両側を打つ。reference: 固定reference modelを相手にする。
+  opponent: reference
+  # both: policyが黒/白を交互に担当。black/white: policyが指定色のみ担当。
+  learning_player: both
+  # dataset/mixed時に各試合からどの開始局面を取るか。first/early/all。
+  start_positions: first
+  # 開始局面として使う最大手数。中盤以降に寄せすぎないための上限。
+  max_start_ply: 20
+  # 開始局面として使う最小手数。序盤重複を避けるなら4などにする。
+  min_start_ply: 0
+  # dataset/mixedで保持する開始局面数の上限。
+  max_start_positions: 50000
+  # trueなら同一盤面を開始局面プールから重複除去する。
+  deduplicate: true
+  # 1 rolloutで進める最大手数。
+  max_plies: 225
+  # 終局勝敗bonusの割引率。1.0なら全採用手に同じ強さで伝える。
+  gamma: 1.0
+  # 終局時に、勝ったpolicy手へ足す最終勝敗bonusの大きさ。
+  final_result_weight: 1.0
+  # rollout内の局面/TSS報酬に掛ける重み。
+  tss_weight: 1.0
+  # 引き分け時の終局報酬。
+  draw_reward: 0.0
+  # 1 updateで何個の開始局面からrolloutを作るか。
+  prompts_per_step: 2
+  # 次局面へ進める候補手の選び方。softmax または best。
+  action_selection: softmax
+  # action_selection=softmax時の報酬softmax温度。低いほど高報酬手を選びやすい。
+  # 候補手をTSS報酬で評価した後、実際に盤面へ進める1手を選ぶとき の温度
+  # 小さい 例: 0.1  高報酬手ばかり選ぶ
+  # 中くら 例: 0.25 高報酬手を優先しつつ少し探索する
+  # 大きい 例: 1.0  報酬差をあまり強く見ず、いろいろ選ぶ
+  selection_temperature: 0.4
+  # rollout単位ログ用の間隔。現状は将来拡張用。
+  log_every_episodes: 10
+
+trajectory_group:
+  # trajectory_group objectiveで、同じ開始局面・同じpolicy担当色から生成するtrajectory本数。
+  # learning_player=both の場合、各開始局面から黒policy groupをG本、白policy groupをG本生成する。
+  # 例: prompts_per_step=2, group_size=4, learning_player=both なら 1 update で最大16本のtrajectoryを作る。
+  group_size: 4
