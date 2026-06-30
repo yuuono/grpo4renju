@@ -368,7 +368,7 @@
         </div>
         <div class="panel grid">
           <div class="stats">
-            <div class="stat" id="turn-status">手番: 黒(あなた)</div>
+            <div class="stat" id="turn-status">手番: 黒(AI)</div>
             <div class="stat" id="game-status">状態: 開始前</div>
             <div class="stat" id="ai-status">AI: まだ着手していません</div>
           </div>
@@ -467,6 +467,8 @@
 
       const LANGUAGE_STORAGE_KEY = "renju-transformer.docs.language";
       const LANGUAGES = ["ja", "en"];
+      const AI_PLAYER = BLACK;
+      const HUMAN_PLAYER = WHITE;
       const I18N = {
         ja: {
           ai: "AI",
@@ -649,7 +651,7 @@
       }
 
       function actorName(player) {
-        return player === BLACK ? t("you") : t("ai");
+        return player === AI_PLAYER ? t("ai") : t("you");
       }
 
       function renderLanguageToggle() {
@@ -884,6 +886,7 @@
         setAiStatus("aiIdle");
         refreshGameSummary("newGame");
         setTranslatedResult("resultIdle");
+        queueAiOpeningMove();
       }
 
       async function ensureLoaded() {
@@ -909,7 +912,7 @@
         if (gameState.busy || gameState.over) {
           return;
         }
-        if (currentPlayer() !== WHITE) {
+        if (currentPlayer() !== AI_PLAYER) {
           setStatus("notAiTurn");
           return;
         }
@@ -923,10 +926,10 @@
             applyLegalMask: true,
           });
           const aiIndex = prediction.predictedIndex;
-          gameState.board[aiIndex] = WHITE;
+          gameState.board[aiIndex] = AI_PLAYER;
           gameState.lastMoveIndex = aiIndex;
           const probability = prediction.predictedProbability.toFixed(4);
-          gameState.moveLog.push({index: aiIndex, player: WHITE, probability});
+          gameState.moveLog.push({index: aiIndex, player: AI_PLAYER, probability});
           setAiStatus("aiMoved", {
             coord: indexToCoord(aiIndex),
             moveId: prediction.predictedMoveId,
@@ -950,7 +953,7 @@
         if (gameState.busy || gameState.over) {
           return;
         }
-        if (currentPlayer() !== BLACK) {
+        if (currentPlayer() !== HUMAN_PLAYER) {
           setStatus("notHumanTurn");
           return;
         }
@@ -959,9 +962,9 @@
           setStatus("illegalMove", {coord: indexToCoord(index)});
           return;
         }
-        gameState.board[index] = BLACK;
+        gameState.board[index] = HUMAN_PLAYER;
         gameState.lastMoveIndex = index;
-        gameState.moveLog.push({index, player: BLACK});
+        gameState.moveLog.push({index, player: HUMAN_PLAYER});
         setAiStatus("aiAfterHumanMove");
         refreshGameSummary("aiTurn");
         if (evaluateBoardAfterMove()) {
@@ -976,6 +979,7 @@
         try {
           loaded = null;
           await ensureLoaded();
+          queueAiOpeningMove();
         } catch (error) {
           setStatus("loadFailed", {message: error.message});
         } finally {
@@ -1024,6 +1028,14 @@
       boardCsvInput.value = createEmptyBoardCsv();
       resetGame();
       applyLanguage(currentLanguage);
+
+      function queueAiOpeningMove() {
+        window.setTimeout(() => {
+          if (!gameState.busy && !gameState.over && currentPlayer() === AI_PLAYER) {
+            runAiMove();
+          }
+        }, 0);
+      }
     </script>
   </body>
 </html>
