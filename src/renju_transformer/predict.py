@@ -74,5 +74,5 @@ def predict_from_checkpoint(cfg: DictConfig) -> None:
 
     best_move_id = tokenizer.index_to_move_id(indices[0].item())
     print(f"predicted_move_id={best_move_id}")
-    for rank, (value, index) in enumerate(zip(values.tolist(), indices.tolist()), start=1):
+    for rank, (value, index) in enumerate(zip(values.tolist(), indices.tolist(), strict=True), start=1):
         print(f"top{rank}_move_id={tokenizer.index_to_move_id(index)} prob={value:.6f}")
