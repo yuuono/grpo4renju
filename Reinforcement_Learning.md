@@ -267,7 +267,7 @@ REINFORCEでは，目的関数の一部である $G_0$ を $G_{t}$ に変更し�
 \left[
 \nabla_\theta \log \pi_\theta(a_t \mid s_t)\ G_t\right]
 ```
-が等価となることを証明した．時刻$t$について，軌跡全体の報酬を
+が等価となることを証明した．時刻 $t$ について，軌跡全体の報酬を
 ```math
 G_0 = \sum_{k=0}^{T-1} \gamma^k R_{k+1}= \sum_{k=0}^{t-1} \gamma^k R_{k+1} + \sum_{k=t}^{T-1} \gamma^k R_{k+1}
 ```
