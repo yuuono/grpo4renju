@@ -48,13 +48,13 @@
 強化学習では，エージェントが環境に対して行動し，その結果として次の状態と報酬を受け取る．エージェントの目的は，将来得られる報酬の合計が大きくなるような行動の選び方を学習することである．基本的な流れは次のようになる．
 ```math
 \begin{align}
-状態 S_t & を観測する \\
+状態 S_t& を観測する \\
 & \downarrow \\
 方策 \pi に従って&行動 A_t を選ぶ \\
 & \downarrow \\
-環境が次の状態 & S_{t+1} と報酬 R\left(S_t, A_t\right)を返す \\
+環境が次の状態& S_{t+1} と報酬 R\left(S_t, A_t\right)を返す \\
 & \downarrow \\
-これを終端 & まで繰り返す \\
+これを終端& まで繰り返す \\
 \end{align}
 ```
 このように，次の状態や報酬が現在の状態と行動のみで決定される時系列のことを，マルコフ決定過程（Markov Decision Process, MDP）と呼ぶ．
@@ -145,8 +145,7 @@ $A_{\pi} < 0$ なら，その行動は平均より悪いということになる
 
 ## 4. ベルマン方程式
 
-価値関数は，「即時報酬」と「次の状態の価値」に分解できる．
-この関係をベルマン方程式と呼ぶ．状態価値関数は以下のように，ベルマン方程式で書ける．
+状態価値関数は以下のように，「即時報酬」と「次の状態の価値」に分解でき，ベルマン方程式で書ける．
 ```math
 \begin{align}
 V_\pi(s)
@@ -159,7 +158,7 @@ V_\pi(s)
 \end{align}
 ```
 この導出は，前の2式を組み合わせることで可能で，
-状態価値関数におけるベルマン方程式は「状態 $s$の価値関数」と「その次に取りうる $s'$ の価値関数」との関係を示し，
+状態価値関数におけるベルマン方程式は「状態 $s$ の価値関数」と「その次に取りうる $s'$ の価値関数」との関係を示し，
 ```math
 \begin{align}
 状態 s の価値 = & その状態で各行動を選ぶ確率 \times \\
@@ -215,16 +214,17 @@ Q_\pi(s, a)
 強化学習の方法は大きく分けると，価値ベースと方策ベースに分けられる．
 ### 価値ベース
 価値ベースでは，「行動そのもの」ではなく「その行動を取ったときの良さ・価値」，状態or行動価値関数を学習し，価値が最大になるように行動を選んでいく．
-代表的なものでは，状態 $s$ で行動 $a$ を取ったときの価値関数$Q(s,a)$を学習する．
-つまり，「この状態でこの行動を取ると，将来的にどれくらい報酬が得られそうか」を数値として学習していく．そして，過去に経験した軌跡$(s,a,r,s')$を使用し，価値関数が更新する．
+代表的なものとして，状態 $s$ で行動 $a$ を取ったときの価値関数 $Q(s, a)$ を学習する手法が挙げられる．
+つまり，「この状態でこの行動を取ると，将来的にどれくらい報酬が得られそうか」を数値として学習していく．
+そして，過去に経験した軌跡 $(s, a, r, s')$ を使用し，価値関数が更新する．
 そのため，価値関数が更新されると，同じデータでも違う結果となり，同じデータでも再び学習使用可能となる．また，価値ベースは，最適行動を求めるために，全ての可能な行動を確認する必要があり
 ```math
 a^* = \arg \underset{a}{\max} Q_\pi(s, a)
 ```
-を計算する．このため，行動候補が離散的で，最善手がはっきりしている問題に強い．しかしながら，行動空間が非常に大きい場合や連続値の場合に扱いづらい．例えば行動空間が $ −1<a<1 $ だと，行動$0.999$ の価値，$ 0.998 $ の価値を計算する必要があり，困難である．さらに，最適行動決定の際，価値最大化を行うために，価値の過大評価が起きやすく，価値の誤差が行動選択に直接影響してしまう．シンプルな設定では理論的な収束性を議論しやすいという利点もある．代表例は Q-Learning，DQN，SARSA である．
+を計算する．このため，行動候補が離散的で，最善手がはっきりしている問題に強い．しかしながら，行動空間が非常に大きい場合や連続値の場合に扱いづらい．例えば行動空間が $−1 \le a \le 1$ だと，行動 $0.999$ の価値， $0.998 $ の価値を計算する必要があり，困難である．さらに，最適行動決定の際，価値最大化を行うために，価値の過大評価が起きやすく，価値の誤差が行動選択に直接影響してしまう．シンプルな設定では理論的な収束性を議論しやすいという利点もある．代表例は Q-Learning，DQN，SARSA である．
 
 ### 方策ベース
-方策ベースでは，行動を選ぶ方策 $\pi_{\theta}$ ，「状態 $s$で，どの行動 $a$をどれくらいの確率で選ぶか」を学習している．これにより，最終的に欲しい方策を直接学習できる点， 確率的な方策や連続的な行動を自然に扱える点が優れている点となる．
+方策ベースでは，行動を選ぶ方策 $\pi_{\theta}$ ，「状態 $s$ で，どの行動 $a$ をどれくらいの確率で選ぶか」を学習している．これにより，最終的に欲しい方策を直接学習できる点， 確率的な方策や連続的な行動を自然に扱える点が優れている点となる．
 一方で，現在の方策 $\pi_{\theta}$ で行動し，得られた報酬で更新を行うため，現在の方策で集めたデータが重要となり，On-policyになりやすく，データ効率が悪くなりやすい．例えば，報酬が大きかったり，小さかったりすると，勾配が振り幅が大きくなるため，学習が不安定となる．そして，
 方策ベースの手法では，基本的に，将来報酬の期待値を最大化するため，どの行動が本当に良かったのかという credit assignment が難しいという点もある．代表例は REINFORCE，actor-critic，PPO，GRPO である．
 
@@ -250,8 +250,10 @@ J_\pi(\theta) & = \mathbb{E}_{\tau \sim \pi_\theta}[G_0] \\
 ```math
 \nabla_\theta \log \pi_\theta(a_t \mid s_t) = \dfrac{\nabla_\theta \pi_\theta(a_t \mid s_t)}{\pi_\theta(a_t \mid s_t)}
 ```
-となり，$\nabla_\theta \pi_\theta(a_t \mid s_t)$は，方策の確率$\pi_\theta(a_t \mid s_t)$を大きくする方向となる．そのため，方策勾配とは，「良かった行動の確率を上げ，悪かった行動の確率を下げる」方向となる．そして，$G_0$ が正なら $\log \pi_\theta(a_t \mid s_t)$ を大きくする方向に更新し，$G_0$ が負なら小さくする方向に更新する．
-そのため，報酬の分散が大きいと，それが直接更新方向に影響を及ぼすため，学習が不安定になりやすい．そこで，報酬の分散を減らすようにしたのが，REINFORCEやbaseline導入やactor-critic という手法である．REINFORCEでは，目的関数の一部である$G_0$ を$G_t$ に変更した手法である．$G_0$ は初期状態から将来$(t=T)$までの報酬の合計期待値となる．しかし，時刻$t$の現在状態において，初期状態から現在時刻までの報酬は，エージェントが取りうる行動の良し悪しとは関係ない．現在から将来までの報酬の合計期待値$G_t$を利用しても，方策勾配
+となる．
+ここで $\nabla_\theta \pi_\theta(a_t \mid s_t)$ は，方策の確率 $\pi_\theta(a_t \mid s_t)$ を大きくする方向となる．そのため，方策勾配とは，「良かった行動の確率を上げ，悪かった行動の確率を下げる」方向となる．
+収益 $G_0$ が正なら $\log\pi_\theta(a_t \mid s_t)$ を大きくする方向に更新し，収益 $G_0$ が負なら小さくする方向に更新する．そのため，報酬の分散が大きいと，それが直接更新方向に影響を及ぼすため，学習が不安定になりやすい．そこで，報酬の分散を減らすようにしたのが，REINFORCEやbaseline導入やactor-critic という手法である．
+REINFORCEでは，目的関数の一部である $G_0$ を $G_{t}$ に変更した手法である．$G_0$ は初期状態から将来 $(t=T)$ までの報酬の合計期待値となる．しかし，時刻 $t$ の現在状態において，初期状態から現在時刻までの報酬は，エージェントが取りうる行動の良し悪しとは関係ない．現在から将来までの報酬の合計期待値 $G_{t}$ を利用しても，方策勾配
 ```math
 \nabla_\theta J(\theta)
 = \mathbb{E}_{\tau \sim \pi_\theta}
@@ -287,8 +289,8 @@ G_0 = \sum_{k=0}^{T-1} \gamma^k R_{k+1}= \sum_{k=0}^{t-1} \gamma^k R_{k+1} + \su
 \end{align}
 ```
 となる．ここで，第1項が0となるのは Expected Grad-Log-Prob (EGLP) lemma より[こちら](https://spinningup.openai.com/en/latest/spinningup/extra_pg_proof1.html)を参照．
-$G_t$は，現在からの報酬となるので，the **reward-to-go** from that pointと呼ばれる．
-さらに，(EGLP) lemmaより，行動 $a$に依存しない関数であればどのような値を引いても方策勾配は変化しないことにより，以下のようにbaseline関数$b(S_t)$を導入したもの
+$G_t$ は，現在からの報酬となるので，the **reward-to-go** from that pointと呼ばれる．
+さらに，(EGLP) lemmaより，行動 $a$に依存しない関数であればどのような値を引いても方策勾配は変化しないことにより，以下のようにbaseline関数 $b(S_t)$ を導入したもの
 ```math
 \nabla_\theta J(\theta)
 = \mathbb{E}_{\tau \sim \pi_\theta}
@@ -297,7 +299,7 @@ $G_t$は，現在からの報酬となるので，the **reward-to-go** from th
 \left( G_t- b\left(S_t\right) \right)
 \right]
 ```
-がある．ここで，baseline関数に状態価値関数$V_\pi$を用いると，方策勾配
+がある．ここで，baseline関数に状態価値関数 $V_\pi$ を用いると，方策勾配
 ```math
 \begin{align}
 \nabla_\theta J(\theta)
@@ -309,7 +311,7 @@ $G_t$は，現在からの報酬となるので，the **reward-to-go** from th
 \end{align}
 ```
 として，現在の状態に対する報酬を引いて，選択した行動の価値のみを方策勾配に反映できる．
-他の方策勾配としては，行動価値関数$Q_\pi$を用いた
+他の方策勾配としては，行動価値関数 $Q_\pi$を用いた
 ```math
 \nabla_\theta J(\theta)
 = \mathbb{E}_{\tau \sim \pi_\theta}
@@ -347,7 +349,7 @@ L_\pi(\theta) = - \mathbb{E}_{\tau \sim \pi_{\theta_{\rm old}}}
 \left[ \log \pi_\theta(a_t \mid s_t)\ A_\pi\left(s_t, a_t\right)
 \right]
 ```
-を最小化する際，advantage 関数$A_\pi\left(s_t, a_t\right)=Q_\pi(s, a) - V_\pi(s)$ を推定することが求められる．
+を最小化する際，advantage 関数 $A_\pi\left(s_t, a_t\right)=Q_\pi(s, a) - V_\pi(s)$ を推定することが求められる．
 この時のadvantage 関数の推定手法について説明する．
 まず，Temporal Difference 誤差 (TD residual) 
 ```math
@@ -430,7 +432,7 @@ TRPOのアイデアである，更新前の方策 $\pi_{\theta_{\rm old}}$ と�
 = \frac{\pi_\theta(a_t \mid s_t)}
 {\pi_{\theta_{\rm old}}(a_t \mid s_t)}
 ```
-を用いて，更新を制限する．さらに，クリップ幅 $\epsilon$ を用いて，$\rho_t$をクリップすることで，より更新する幅を制限している．PPO の clipped objective function
+を用いて，更新を制限する．さらに，クリップ幅 $\epsilon$ を用いて， $\rho_t$ をクリップすることで，より更新する幅を制限している．PPO の clipped objective function
 ```math
 L_{\mathrm{PPO}}(\theta)
 =
@@ -448,8 +450,8 @@ L_{\mathrm{PPO}}(\theta)
 - advantage が正の行動は，確率を上げたい
 - advantage が負の行動は，確率を下げたい
 - ただし，一度に大きく変えすぎると壊れるので，確率比を clip する
-- 良くなりすぎる方向は打ち切る  （クリップすると，$\theta$ 依存がないので勾配0）
-- 悪くなる方向はそのまま罰する　（クリップしても，$r_t(\theta)$ が悪すぎなら反映）
+- 良くなりすぎる方向は打ち切る  （クリップすると $\theta$ 依存がないので勾配0）
+- 悪くなる方向はそのまま罰する　（クリップしても $r_t(\theta)$ が悪すぎなら反映）
 また，TRPOからの改善として，KLダイバージェンスをロスに入れる手法もここで提案された．
 PPOは基本的に，actor-critic で用いられ，この場合，状態価値関数 $V_\pi$ がcritic となる．
 PPOにおけるadvantage の推定には，Generalized Advantage Estimation (GAE)が用いられる．
@@ -459,13 +461,13 @@ PPO schematic view
 %%{init: {"flowchart": {"nodeSpacing": 12, "rankSpacing": 10, "htmlLabels": true}, "themeVariables": {"fontSize": "12px"}}}%%
 flowchart LR
     Q["s"] --> P["Policy"]
-    P --> O["$$a$$"]
+    P --> O["$a$"]
 
     O --> M["Reference & Reward"]
     O --> V["Value"]
 
     M --> R["r & KL"]
-    V --> VV["$$V$$"]
+    V --> VV["$V$"]
 
     R --> G["GAE"]
     VV --> G
@@ -488,7 +490,7 @@ GRPO はdeepseek における強化学習で提案された手法である．GRP
 a_1, a_2, \dots, a_G
 \sim \pi_{\theta_{\rm old}}(\cdot \mid s)
 ```
-それぞれ行動 $a_i$に報酬 $r_i$を付け，グループ内の平均と標準偏差より，相対advantage 
+それぞれ行動 $a_i$ に報酬 $r_i$ を付け，グループ内の平均と標準偏差より，相対advantage 
 ```math
 \hat{A}_i=
 \frac{r_i - \mathrm{mean}(r_1, \dots, r_G)}
@@ -502,24 +504,25 @@ L_{\mathrm{GRPO}}(\theta)=\mathbb{E}\left[\frac{1}{G}\sum_{i=1}^{G}\min
 - \beta D_{\mathrm{KL}}\left(\pi_\theta \| \pi_{\mathrm{ref}}\right)
 \right]
 ```
-ここで $\pi_{\mathrm{ref}}$ は固定された reference model であり，$D_{\mathrm{KL}}$ は現在の方策が reference からどれくらい離れたかを表す．$\beta$ は KL正則化の強さである．
+ここで $\pi_{\mathrm{ref}}$ は固定された reference model であり，KLダイバージェンス $D_{\mathrm{KL}}$ は現在の方策が reference からどれくらい離れたかを表す．$\beta$ は KL正則化の強さである．
 GRPO の中心は，Critic を使わずに group 内比較で advantage を作る点にある．同じ状態から複数の候補を出し，その中で報酬が高いものを押し上げ，低いものを押し下げる．
 KLダイバージェンスに関しては，サンプル近似を行う際に，負となる可能性があるために，少し改良を加えたもの
-$$
+```math
 D_{\mathrm{KL}}\left(\pi_\theta \| \pi_{\mathrm{ref}}\right)=\dfrac{\pi_{\mathrm{ref}}(a\mid s)}{\pi_\theta(a\mid s)} -\log \dfrac{\pi_{\mathrm{ref}}(a\mid s)}{\pi_\theta(a\mid s)} -1
-$$を使用する．これは，KLの不偏推定量でかつ，非負となる．
+```
+を使用する．これは，KLの不偏推定量でかつ，非負となる．
 
 GRPO schematic view
 ```mermaid
 %%{init: {"flowchart": {"nodeSpacing": 12, "rankSpacing": 10, "htmlLabels": true}, "themeVariables": {"fontSize": "12px"}}}%%
 flowchart LR
     Q["s"] --> P["Policy"]
-    P["Policy"] --> O["$$a_1,\ldots,a_G$$"]
+    P["Policy"] --> O["$a_1,\ldots,a_G$"]
 
     O --> M["Reference & Reward"]
-    M --> R["$$r_1,\ldots,r_G$$ & KL"]
+    M --> R["$r_1,\ldots,r_G$ & KL"]
 
-    R --> A["$$A_1,\ldots,A_G$$"]
+    R --> A["$A_1,\ldots,A_G$"]
     A --> P
 
     classDef trained fill:#fff0bd,stroke:#34495e;
@@ -545,7 +548,7 @@ RenjuTransformer の GRPO では，教師あり学習済みモデルを policy m
 
 報酬は概念的には次の形である．
 ```math
-reward(s, a)= TSS\_score(s_{\mathrm{after}\ a}) + rule\_reward(s, a) + shape\_reward(s_{\mathrm{after}\ a}, a)+ final\_result\_bonu
+reward(s, a)= TSS\_score(s_{\mathrm{after}\ a}) + rule\_reward(s, a) + shape\_reward(s_{\mathrm{after}\ a}, a)+ final\_result\_bonus
 ```
 
 主な報酬は次の通り．
@@ -592,7 +595,9 @@ while not terminal:
 
 `trajectory_group` は，同じ開始局面から終局までの複数の軌跡を作り，軌跡単位の合計報酬で比較する．
 
-$$R(\tau_i)=\sum_{t \in \mathrm{policy\ turns}} r_t+ final\_result\_reward$$
+```math
+R(\tau_i) = \sum_{t \in \mathrm{policy\ turns}} r_t+ final\_result\_reward
+```
 同じ開始局面・同じ policy 色の中で正規化する．
 ```math
 \hat{A}_i=
