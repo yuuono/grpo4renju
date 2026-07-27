@@ -197,13 +197,13 @@ Q_\pi(s, a)
 強化学習では，「学習で更新する方策（target policy）」と「学習用データを集める時の行動方策（behavior policy）」という二つの方策が必要となる．強化学習は，方策を更新する際にどの方策から集めたデータを使うかで On-policy （方策オン）と Off-policy（方策オフ）の二つに分けられる．On-policy は，target policy と behavior policy が同じである訓練手法である．つまり，
 以下の図のように，現在の方策で集めたデータを使って，方策を更新することであり，自分の経験から自分を更新する．On-policyの手法は，データ効率が悪くなりやすいが，方策の更新方向が現在の方策に対応しているため，目的関数の意味は比較的明確である．
 ```math
-\begin{align}
-現在の方策&で行動をサンプル \\
-& \downarrow \\
-報酬&を得る \\
-& \downarrow \\
-そのデータで&同じ方策を更新 \\
-\end{align}
+\begin{gathered}
+現在の方策で行動をサンプル \\
+\downarrow \\
+報酬を得る \\
+\downarrow \\
+そのデータで同じ方策を更新 \\
+\end{gathered}
 ```
 
 一方で，Off-policy は，target policy と behavior policy が異なる訓練手法である．つまり，現在の方策とは違う方策で集めたデータで訓練を行い，他人の経験から自分を更新する．
