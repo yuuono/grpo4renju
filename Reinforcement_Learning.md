@@ -46,15 +46,14 @@
 ## 1. 強化学習の問題設定
 
 強化学習では，エージェントが環境に対して行動し，その結果として次の状態と報酬を受け取る．エージェントの目的は，将来得られる報酬の合計が大きくなるような行動の選び方を学習することである．基本的な流れは次のようになる．
-$$
-\begin{align}
-状態 S_t & を観測する \\
-& ↓ \\
-方策 \pi に従って&行動 A_t を選ぶ \\
-& ↓ \\
-環境が次の状態 &S_{t+1}  と報酬 R\left(S_t, A_t\right) を返す \\
-& ↓ \\
-これを 終端 & まで繰り返す \\
+$$\begin{align}
+\text{状態 } S_t & \text{を観測する} \\
+& \downarrow \\
+\text{方策} \pi \text{に従って}&\text{行動} A_t \text{を選ぶ} \\
+& \downarrow \\
+  \text{環境が次の状態} & S_{t+1}  \text{と報酬} R\left(S_t, A_t\right) \text{を返す} \\
+& \downarrow \\
+\text{これを終端} & \text{まで繰り返す} \\
 \end{align}
 $$
 このように，次の状態や報酬が現在の状態と行動のみで決定される時系列のことを，マルコフ決定過程（Markov Decision Process, MDP）と呼ぶ．
@@ -128,6 +127,7 @@ A_{\pi}\left(s, a\right) = Q_\pi(s, a) - V_\pi(s)
 $$
 と定義する．この式は，特定の行動$a$ を選んだ場合の価値から方策 $\pi$が選ぶ行動の平均的な良さを引いた値を示す．そのため，advantage関数は，特定の行動$a$ が平均的な行動よりどれくらい良かったかを表す量となる．$A_{\pi} > 0$ なら，その行動は平均より良い．$A_{\pi} < 0$ なら，その行動は平均より悪いということになる．advantage を使うことで，「絶対的に報酬が高いか」ではなく，「その状態の中で相対的に良い行動か」を見やすくなる．単純に return $G_t$ だけを使うと，報酬のばらつきが大きくなりやすい．
 ## 4. ベルマン方程式
+
 価値関数は，「即時報酬」と「次の状態の価値」に分解できる．
 この関係をベルマン方程式と呼ぶ．状態価値関数は以下のように，ベルマン方程式で書ける．
 $$
@@ -346,6 +346,7 @@ $$
 のように，将来のTD誤差を遠いものほど小さい重みで，いろいろなNステップ advantage 推定を重み付き平均する．ここで，重み係数$\lambda$ を0から1まで変化させることで，バイアスと分散のトレードオフを調整可能．
 重み係数$\lambda$ が小さいと，TD法に近づき，低分散・高バイアスで
 重み係数$\lambda$ が大きいと，MC法に近づき，高分散・低バイアスとなる．
+
 ## 9. TRPO
 TRPOでは，ある方策$\tilde{\pi}$と他の方策$\pi$との収益期待値の差の公式
 $$
@@ -381,6 +382,7 @@ $$
 これにより，同じバッチを使いながら，現在の方策が古い方策からどれくらいズレたかを ratio で追跡可能となり，この行動の確率を古い方策に比べてどれくらい変えたかを管理可能となる．
 古い方策で集めたデータを使って何回か更新しても，古い方策から離れすぎないようにしている．そのため，データ効率が通常の方策勾配法よりも良くなる．通常の方策勾配法では，すぐに，バッチ内のデータのみに最適化されてしまう．環境から軌跡を集めるのが高コストである強化学習では，よりデータ効率の良い手法が求められる．
 さらに，TRPOでは，訓練における学習率だけではなく，古い方策と新しい方策の距離を KLダイバージェンス $D_{KL}\left( \pi_{\theta_{\rm old}} \| \pi_{\theta}\right)$が一定以下になるように制約をかけながら，更新することも提案されている．しかしながら，このKL制約付き最適化問題を解くには，ヘッセ行列が必要となるため，計算コストが高いという問題がある．以降のPPOで損失関数に入れることで解決されていく．
+
 ## 10. PPO
 
 このように，方策ベースの強化学習において，勾配方策をそのまま使うと，1回の更新で方策が大きく変わりすぎることがある．そして，方策が急に変わると，集めた On-policy データがすぐ古くなり，学習が不安定になると点がある．TRPOの良いアイデアを引き継ぎながら，1次精度の最適化手法で提案されたのが Proximal Policy Optimization (PPO)である．
@@ -440,7 +442,9 @@ flowchart LR
 
  ```
 
+
 ## 11. GRPO
+
 GRPO はdeepseek における強化学習で提案された手法である．GRPO は PPO に近い方策更新を行うが，Critic による価値推定の代わりに，グループ内の相対評価で advantage を作る．同じ入力や同じ状態から $G$ 個の出力をサンプルする．
 $$
 a_1, a_2, \dots, a_G
@@ -474,9 +478,9 @@ KLダイバージェンスに関しては，サンプル近似を行う際に，
 $$
 D_{\mathrm{KL}}\left(\pi_\theta \| \pi_{\mathrm{ref}}\right)=\dfrac{\pi_{\mathrm{ref}}(a\mid s)}{\pi_\theta(a\mid s)} -\log \dfrac{\pi_{\mathrm{ref}}(a\mid s)}{\pi_\theta(a\mid s)} -1
 $$を使用する．これは，KLの不偏推定量でかつ，非負となる．
+
 GRPO schematic view
 ```mermaid
-
 %%{init: {"flowchart": {"nodeSpacing": 12, "rankSpacing": 10, "htmlLabels": true}, "themeVariables": {"fontSize": "12px"}}}%%
 flowchart LR
     Q["s"] --> P["Policy"]
@@ -512,12 +516,7 @@ RenjuTransformer の GRPO では，教師あり学習済みモデルを policy m
 報酬は概念的には次の形である．
 
 $$
-reward(s, a)
-=
-TSS\_score(s_{\mathrm{after}\ a})
-+ rule\_reward(s, a)
-+ shape\_reward(s_{\mathrm{after}\ a}, a)
-+ final\_result\_bonus
+reward(s, a)= TSS\_score(s_{\mathrm{after}\ a}) + rule\_reward(s, a) + shape\_reward(s_{\mathrm{after}\ a}, a)+ final\_result\_bonus
 $$
 
 主な報酬は次の通り．
@@ -561,17 +560,12 @@ while not terminal:
 局面ごとの候補比較ができるため，TSS による戦術学習を入れやすい．
 
 ### trajectory_group
+
 `trajectory_group` は，同じ開始局面から終局までの複数の軌跡を作り，軌跡単位の合計報酬で比較する．
-$$
-R(\tau_i)
-=
-\sum_{t \in \mathrm{policy\ turns}} r_t
-+ final\_result\_reward
-$$
+
+$$R(\tau_i)=\sum_{t \in \mathrm{policy\ turns}} r_t+ final\_result\_reward$$
 同じ開始局面・同じ policy 色の中で正規化する．
-$$
-\hat{A}_i
-=
+$$\hat{A}_i=
 \frac{R(\tau_i) - \mathrm{mean}(R(\tau_1), \dots, R(\tau_G))}
 {\mathrm{std}(R(\tau_1), \dots, R(\tau_G)) + \delta}
 $$
