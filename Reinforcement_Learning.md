@@ -47,15 +47,15 @@
 
 強化学習では，エージェントが環境に対して行動し，その結果として次の状態と報酬を受け取る．エージェントの目的は，将来得られる報酬の合計が大きくなるような行動の選び方を学習することである．基本的な流れは次のようになる．
 ```math
-\begin{align}
-状態 S_t& を観測する \\
-& \downarrow \\
-方策 \pi に従って&行動 A_t を選ぶ \\
-& \downarrow \\
-環境が次の状態& S_{t+1} と報酬 R\left(S_t, A_t\right)を返す \\
-& \downarrow \\
-これを終端& まで繰り返す \\
-\end{align}
+\begin{gathered}
+状態 S_t を観測する \\
+ \downarrow \\
+方策 \pi に従って行動 A_t を選ぶ \\
+ \downarrow \\
+環境が次の状態 S_{t+1} と報酬 R\left(S_t, A_t\right)を返す \\
+ \downarrow \\
+これを終端 まで繰り返す \\
+\end{gathered}
 ```
 このように，次の状態や報酬が現在の状態と行動のみで決定される時系列のことを，マルコフ決定過程（Markov Decision Process, MDP）と呼ぶ．
 ```math
