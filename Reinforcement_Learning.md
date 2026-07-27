@@ -46,8 +46,7 @@
 ## 1. 強化学習の問題設定
 
 強化学習では，エージェントが環境に対して行動し，その結果として次の状態と報酬を受け取る．エージェントの目的は，将来得られる報酬の合計が大きくなるような行動の選び方を学習することである．基本的な流れは次のようになる．
-$$
-\begin{align}
+$$\begin{align}
 \text{状態} S_t & \text{を観測する} \\
 & \downarrow \\
 \text{方策} \pi \text{に従って}&\text{行動} A_t \text{を選ぶ} \\
@@ -55,18 +54,15 @@ $$
   \text{環境が次の状態} & S_{t+1}  \text{と報酬} R\left(S_t, A_t\right) \text{を返す} \\
 & \downarrow \\
 \text{これを終端} & \text{まで繰り返す} \\
-\end{align}
-$$
+\end{align}$$
 このように，次の状態や報酬が現在の状態と行動のみで決定される時系列のことを，マルコフ決定過程（Markov Decision Process, MDP）と呼ぶ．
-$$
-\begin{align}
+$$\begin{align}
 S_t&: 現在の状態 \\
 A_t&: 現在の行動 \\
 R_{t+1}&: 行動後に得られる報酬 \\
 S_{t+1}&: 次の状態 \\
 \pi(A_t=a | S_t=s)&: 状態 s で行動 a を選ぶ方策 \\
-\end{align}
-$$
+\end{align}$$
 このようにして，軌跡(trajectory)が
 $$
 \tau = \left( S_0​,A_0​,R_1​,S_{1​},A_{1}​, R_2​​,\ldots,S_t​,A_t, R_{t+1}​​,\ldots,R_{T},S_{T}​\right)
@@ -76,7 +72,7 @@ $$
 
 ## 2. Return と割引率
 
-終端時刻 $T$ までの軌跡$\tau$に対して，ある時刻 $t$ から将来得られる報酬の合計をリターンまたは収益と呼び，
+終端時刻 $T$ までの軌跡 $\tau$に対して，ある時刻 $t$ から将来得られる報酬の合計をリターンまたは収益と呼び，
 $$G_{t}​​ = \gamma^0 R_{t+1} + \gamma R_{t+2} + \gamma^2 R_{t+3} + \dots + \gamma^{T-t-1} R_{T}$$
 と書く．和の記号で書くと$$
 \begin{align}
