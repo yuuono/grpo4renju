@@ -4,7 +4,7 @@
 
 ## 記法
 
-この文書では，対応する確率変数と実現値がある場合，原則として確率変数を大文字，その実現値を対応する小文字で表す．例えば，状態を表す確率変数を $S_t$，実際に観測された状態を $s_t$ と書く．ただし，価値関数 $V_\pi$，行動価値関数 $Q_\pi$，Advantage $A_\pi$，return $G_t$ などについては，強化学習で一般的な表記を優先する．同じ文字の場合は，添字，引数，アクセントで意味を区別する．
+この文書では，対応する確率変数と実現値がある場合，原則として確率変数を大文字，その実現値を対応する小文字で表す．例えば，状態を表す確率変数を $S_t$，実際に観測された状態を $s_t$ と書く．ただし，価値関数 $V_\pi$，行動価値関数 $Q_\pi$，Advantage $A_\pi$，収益 $G_t$ などについては，強化学習で一般的な表記を優先する．同じ文字の場合は，添字，引数，アクセントで意味を区別する．
 
 | 記号                                    | 意味                                     |
 | ------------------------------------- | -------------------------------------- |
@@ -69,12 +69,12 @@ S_{t+1}&: 次の状態 \\
 ```
 このようにして，軌跡(trajectory)が
 ```math
-\tau = \left( S_0​,A_0​,R_1​,S_{1​},A_{1}​, R_2​​,\ldots,S_t​,A_t, R_{t+1}​​,\ldots,R_{T},S_{T}​\right)
+\tau = \left( S_0​,A_0​,R_1​,S_{1​},A_{1}​,R_2​​,\ldots,S_t​,A_t,R_{t+1}​​,\ldots,R_{T},S_{T}​\right)
 ```
 生成される．この書き方がプログラムに馴染む定義であり，こちらを採用する．
 エージェントは現在の状態 $s$ を観測し，方策 $\pi(a \mid s)$によって，行動 $a$ を選択する．そして，MDPを仮定すると，状態遷移確率 $p(s' \mid s, a)$ によって次の状態 $s'$ へと遷移し，報酬関数 $r\left(s,a,s'\right)$ により報酬が得られる．
 
-## 2. Return と割引率
+## 2. 収益 と割引率
 
 終端時刻 $T$ までの軌跡 $\tau$ に対して，ある時刻 $t$ から将来得られる報酬の合計をリターンまたは収益と呼び，
 ```math
@@ -141,7 +141,7 @@ A_{\pi}\left(s, a\right) = Q_\pi(s, a) - V_\pi(s)
 ```
 と定義する．この式は，特定の行動 $a$ を選んだ場合の価値から方策 $\pi$が選ぶ行動の平均的な良さを引いた値を示す．そのため，advantage関数は，特定の行動 $a$ が平均的な行動よりどれくらい良かったかを表す量となる．
 $A_{\pi} > 0$ なら，その行動は平均より良い．
-$A_{\pi} < 0$ なら，その行動は平均より悪いということになる．advantage を使うことで，「絶対的に報酬が高いか」ではなく，「その状態の中で相対的に良い行動か」を見やすくなる．単純に return $G_t$ だけを使うと，報酬のばらつきが大きくなりやすい．
+$A_{\pi} < 0$ なら，その行動は平均より悪いということになる．advantage を使うことで，「絶対的に報酬が高いか」ではなく，「その状態の中で相対的に良い行動か」を見やすくなる．単純に 収益 $G_t$ だけを使うと，報酬のばらつきが大きくなりやすい．
 
 ## 4. ベルマン方程式
 
@@ -340,9 +340,350 @@ L_\pi(\theta) = - \mathbb{E}_{\tau \sim \pi_{\theta_{\rm old}}}
 \left[ \log \pi_\theta(a_t \mid s_t)\ A_\pi\left(s_t, a_t\right)
 \right]
 ```
-と定義して，最小化する．この損失関数は通常の損失関数とは異なる．異なる点は，データ分布がパラメータに依存することと，この損失がモデル性能を計測していないことの2点である．
+と定義して，最小化する．
+この損失関数は通常の損失関数とは異なる．異なる点は，データ分布がパラメータに依存することと，この損失がモデル性能を計測していないことの2点である．
 まず，強化学習において，方策 $\pi_\theta$が更新されると，エージェントの行動が変化し，訪れる状態も変わる．従って，収集されるデータそのものが変化する，データ分布がパラメータに依存しているということになる．現在の方策で集めたデータを使い，現在のパラメータで評価したときのみ，その勾配が方策損失を改善する方向を教えてくれるものであり，モデル性能を評価しているものではないということに注意するべき．そして，この方策損失はいくらでも小さくできるかもしれないが，その結果として実際の方策性能は崩壊することがある．
 このように，方策勾配法はOn-policy で，学習が不安定になりやすいことから，安定した更新手法の研究が進んだ．他には，Natural policy gradientという方策の自然勾配を使用する手法や，Trust Region Policy Optimization (TRPO)がある．
+
+### コードセクション: REINFORCE　を最小構成で実装する
+
+ここでは，方策勾配法を，外部の強化学習環境に依存しない小さな例を紹介する．
+扱う環境は `LineWorld` とする．エージェントは一次元のマス上におり，左端へ到達すると $-1$，右端へ到達すると $+1$ の報酬を得る．
+
+| 状態 | 0 | 1 | 2 | 3 | 4 |
+| --- | --- | --- | --- | --- | --- |
+| 位置 | 左端 |  | start |  | 右端 |
+| 報酬 | -1 | 0 | 0 | 0 | +1 |
+
+```text
+行動0: 左へ移動
+行動1: 右へ移動
+開始位置: 状態2（start）
+ゴール条件: 状態0または状態4に到達したら終了、など
+報酬設計: 左端（状態0）で-1、右端（状態4）で+1
+```
+
+実装する処理は次の7段階である．
+
+1. 方策 $\pi_\theta(a\mid s)$ から行動をサンプリングする
+2. 環境を1ステップ進めて報酬を得る
+3. 終端まで繰り返してtrajectoryを保存する
+4. 各時刻のreward-to-go $G_t$ を計算する
+5. baselineを引いてadvantageを作る
+6. $-\log\pi_\theta(a_t\mid s_t)A_t$ を平均する
+7. `backward()` と `optimizer.step()` で方策を更新する
+
+以下は，そのまま1ファイルとして実行できるPyTorchコードである．
+
+```python
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import torch
+from torch import nn
+from torch.distributions import Categorical
+
+
+torch.manual_seed(0)
+
+
+class LineWorld:
+    """0が負け、4が勝ちとなる5マスの環境。"""
+
+    def __init__(self, max_steps: int = 8) -> None:
+        self.max_steps = max_steps
+        self.position = 2
+        self.steps = 0
+
+    def reset(self) -> int:
+        self.position = 2
+        self.steps = 0
+        return self.position
+
+    def step(self, action: int) -> tuple[int, float, bool]:
+        # 環境の状態遷移には勾配を流さない。
+        # 行動0なら左へ移動, 1なら右へ移動
+        self.position += -1 if action == 0 else 1
+        self.steps += 1
+
+        # 状態0または状態4に到達したら終了
+        if self.position == 4:
+            return self.position, 1.0, True
+        if self.position == 0:
+            return self.position, -1.0, True
+
+        truncated = self.steps >= self.max_steps
+        return self.position, -0.01, truncated
+
+
+class Policy(nn.Module):
+    """状態sを、左右2行動のlogitsへ変換する方策 π_θ(a|s)。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.network = nn.Sequential(
+            nn.Embedding(num_embeddings=5, embedding_dim=16),
+            nn.Linear(16, 2),
+        )
+
+    def forward(self, states: torch.Tensor) -> torch.Tensor:
+        return self.network(states)
+
+
+@dataclass
+class Episode:
+    states: list[int]
+    actions: list[int]
+    rewards: list[float]
+
+
+def collect_episode(env: LineWorld, policy: Policy) -> Episode:
+    """更新前の現在方策を使って、trajectoryを1本収集する。"""
+    states: list[int] = []
+    actions: list[int] = []
+    rewards: list[float] = []
+
+    state = env.reset()
+    done = False
+
+    while not done:
+        state_tensor = torch.tensor([state], dtype=torch.long)
+
+        # trajectory収集中にはパラメータ更新を行わない。
+        with torch.no_grad():
+            logits = policy(state_tensor)
+            # logitsから、各選択肢のカテゴリカル分布（離散確率分布）作成
+            # .sample()	確率に従って選択肢をランダムに選ぶ
+            # .log_prob(x)	選んだ選択肢の対数確率を返す
+            distribution = Categorical(logits=logits)
+            action = int(distribution.sample().item())
+
+        next_state, reward, done = env.step(action)
+        states.append(state)
+        actions.append(action)
+        rewards.append(reward)
+        state = next_state
+
+    return Episode(states=states, actions=actions, rewards=rewards)
+
+
+def reward_to_go(rewards: list[float], gamma: float) -> torch.Tensor:
+    """G_t = R_{t+1} + γ G_{t+1} を後ろから計算する。"""
+    returns = [0.0] * len(rewards)
+    running_return = 0.0
+
+    for t in reversed(range(len(rewards))):
+        running_return = rewards[t] + gamma * running_return
+        returns[t] = running_return
+
+    return torch.tensor(returns, dtype=torch.float32)
+
+
+def train_step(
+    policy: Policy,
+    optimizer: torch.optim.Optimizer,
+    episodes: list[Episode],
+    gamma: float,
+) -> dict[str, float]:
+    """収集済みtrajectoryから、方策を1回更新する。"""
+    all_states: list[int] = []
+    all_actions: list[int] = []
+    all_returns: list[torch.Tensor] = []
+
+    for episode in episodes:
+        all_states.extend(episode.states)
+        all_actions.extend(episode.actions)
+        all_returns.append(reward_to_go(episode.rewards, gamma))
+
+    states = torch.tensor(all_states, dtype=torch.long)
+    actions = torch.tensor(all_actions, dtype=torch.long)
+    returns = torch.cat(all_returns)
+
+    # b(S_t) の簡単な例として、バッチ内リターンの平均を使う。
+    baseline = returns.mean()
+    advantages = returns - baseline
+
+    # advantageは報酬から作った学習ターゲットであり、
+    # 方策側から勾配を流してはいけない。
+    advantages = advantages.detach()
+
+    # 現在の状況から方策
+    logits = policy(states)
+    distribution = Categorical(logits=logits)
+
+    # log π_θ(a_t|s_t): 実際に選択した行動の対数確率だけを取り出す。
+    selected_log_probs = distribution.log_prob(actions)
+
+    # L_π(θ) = -E[log π_θ(a_t|s_t) A_t]
+    # 最大化を行いたいので、マイナスをつけて最小化を行う。
+    policy_loss = -(selected_log_probs * advantages).mean()
+
+    optimizer.zero_grad()
+    policy_loss.backward()
+    optimizer.step()
+
+    # エピソード単位での報酬の合計
+    mean_episode_return = sum(sum(ep.rewards) for ep in episodes) / len(episodes)
+    return {
+        "policy_loss": float(policy_loss.item()),
+        "mean_episode_return": mean_episode_return,
+    }
+
+
+def action_probabilities(policy: Policy, state: int = 2) -> list[float]:
+    with torch.no_grad():
+        # Batch_size, 2（出力次元、右か左の行動ロジット）
+        logits = policy(torch.tensor([state], dtype=torch.long))
+        # squeeze(0)（バッチ次元を削除） tolist()（Pythonのリストへ）
+        return torch.softmax(logits, dim=-1).squeeze(0).tolist()
+
+
+def main() -> None:
+    env = LineWorld()
+    policy = Policy()
+    optimizer = torch.optim.Adam(policy.parameters(), lr=3e-2)
+
+    for iteration in range(300):
+        # 更新するたびに、更新後の方策で新しいデータを集め直す。
+        episodes = [collect_episode(env, policy) for _ in range(32)]
+        metrics = train_step(policy, optimizer, episodes, gamma=0.99)
+
+        if iteration % 50 == 0:
+            left_prob, right_prob = action_probabilities(policy)
+            print(
+                f"iteration={iteration:3d} "
+                f"loss={metrics['policy_loss']:+.4f} "
+                f"return={metrics['mean_episode_return']:+.3f} "
+                f"P(left)={left_prob:.3f} "
+                f"P(right)={right_prob:.3f}"
+            )
+
+
+if __name__ == "__main__":
+    main()
+```
+
+このコードでは，数式と変数が次のように対応している．
+
+| 数式の要素 | コード | 実装上の役割 |
+| --- | --- | --- |
+| $\theta$ | `policy.parameters()` | 最適化する方策のパラメータ |
+| $s_t$ | `episode.states[t]` | 行動を選ぶ直前の状態 |
+| $\pi_\theta(a\mid s)$ | `Categorical(logits=policy(states))` | 状態ごとの行動確率分布 |
+| $a_t$ | `episode.actions[t]` | 方策から実際にサンプルした行動 |
+| $R_{t+1}$ | `episode.rewards[t]` | 行動後に環境が返した報酬 |
+| $G_t$ | `reward_to_go(...)` | 時刻 $t$ 以降の割引リターン |
+| $b(S_t)$ | `returns.mean()` | 分散を抑えるためのbaseline |
+| $\hat A_t$ | `returns - baseline` | 今回の更新で使うadvantage推定値 |
+| $\log\pi_\theta(a_t\mid s_t)$ | `distribution.log_prob(actions)` | 選択行動の対数確率 |
+| $\mathbb{E}[\cdot]$ | `.mean()` | サンプル平均による期待値の近似 |
+| $-\mathbb{E}[\log\pi_\theta A]$ | `policy_loss` | 最小化する方策損失 |
+| $\nabla_\theta L$ | `policy_loss.backward()` | 自動微分による勾配計算 |
+| パラメータ更新 | `optimizer.step()` | 方策を勾配方向へ更新 |
+
+この例では，$M$ 本のtrajectoryに含まれる総着手数を
+
+```math
+N=\sum_{i=1}^{M}T_i
+```
+
+として，理論上の期待値を次の有限サンプル平均で近似している．
+
+```math
+\hat L_\pi(\theta)
+=-\frac{1}{N}
+\sum_{i=1}^{M}\sum_{t=0}^{T_i-1}
+\log\pi_\theta(a_{i,t}\mid s_{i,t})
+\left(G_{i,t}-\bar G\right)
+```
+
+コードでは各episodeの `states`，`actions`，`returns` を平坦化してから `.mean()` しているため，この式と一致する．ここで $\bar G$ はバッチ内の全リターンの平均であり，状態に依存しないbaselineである．
+
+#### なぜ収集時と更新時に方策を2回計算するのか
+
+`collect_episode()` では，状態・行動・報酬だけを保存し，計算グラフを保持しない．そのため，trajectory収集時の推論は `torch.no_grad()` で実行している．更新時の `train_step()` で保存した状態をもう一度方策へ入力し，勾配を持つ `selected_log_probs` を計算する．
+
+```text
+収集: policy(state) → actionをサンプル → state, action, rewardを保存
+更新: policy(saved_states) → 選択行動のlog probabilityを再計算 → backward
+```
+
+収集と再計算の間に `optimizer.step()` を実行していないため，どちらも同じ方策 $\pi_\theta$ である．途中で方策を更新する場合は，収集時の方策と更新時の方策が異なってしまうため，vanillaなOn-policy方策勾配としては扱えなくなる．PPOでは，この違いを新旧方策の確率比によって明示的に補正する．
+
+#### なぜ行動のサンプリングに `argmax` を使わないのか
+
+方策勾配法では，方策が与える確率分布から行動をサンプリングする必要がある．
+
+```python
+action = distribution.sample()
+```
+
+とすることで，確率が低い行動にも試行機会が残る．`argmax` を使うと常に同じ行動が選ばれやすくなり，未経験の行動の報酬を観測できない．
+
+#### 環境の状態遷移に逆伝播しなくてよい理由
+
+`env.step(action)` は整数の状態を更新しており，微分可能ではない．しかし，方策勾配法では環境を通して逆伝播する必要はない．勾配を流す対象は，
+
+```python
+selected_log_probs = distribution.log_prob(actions)
+```
+
+で計算した方策の対数確率である．環境から得た報酬は `advantages` としてその対数確率に掛けられ，どの行動を強化または抑制するかを決める．
+
+#### `advantages.detach()` が必要な理由
+
+この例のadvantageは環境報酬だけから計算しているため，もともと勾配を持たない．それでも `detach()` を明示することで，「advantageは方策を更新するための固定ターゲットである」という実装上の境界を表している．Actor-Criticで価値モデルからadvantageを計算する場合は，この切り離しを忘れると方策損失から価値モデルへ意図しない勾配が流れる可能性がある．
+
+#### この最小実装をActor-Criticへ拡張するには
+
+現在は，
+
+```python
+baseline = returns.mean()
+```
+
+という状態に依存しないbaselineを使用している．これを状態価値モデル，
+
+```python
+values = value_model(states)
+advantages = returns - values.detach()
+```
+
+に置き換えるとActor-CriticのActor側になる．Valueモデルは別に，
+
+```python
+value_loss = torch.nn.functional.mse_loss(values, returns)
+```
+
+で学習する．このとき，
+
+```python
+total_loss = policy_loss + value_coef * value_loss
+```
+
+として同時に更新することも，optimizerを分けて更新することもできる．この拡張でも，環境の状態遷移そのものに勾配を流す必要はない．
+
+#### 実装時の確認項目
+
+- trajectory収集中にoptimizerを更新していないか
+- 更新後は新しい方策でtrajectoryを集め直しているか
+- `log_prob`は全行動ではなく，実際に選択した行動について取得しているか
+- reward-to-goを終端側から逆順に計算しているか
+- advantageへ方策側の勾配が流れていないか
+- 損失の先頭にマイナス符号があるか
+- 学習中は`argmax`ではなく確率分布からサンプリングしているか
+
+実行すると，乱数seedを固定したこの例では，おおむね次のように右行動の確率が増加する．
+
+```text
+iteration=  0 ... return=-0.495 P(left)=0.448 P(right)=0.552
+iteration= 50 ... return=+0.990 P(left)=0.000 P(right)=1.000
+```
+
+この出力で見るべき値は `policy_loss` の減少ではなく，`mean_episode_return` と正解行動の確率 `P(right)` の増加である．方策損失は，異なるiteration間でモデル性能を直接比較する指標ではない．
+
+
 
 ## 8. Generalized Advantage Estimation (GAE)
 
@@ -386,6 +727,267 @@ where\  \delta_t & = r_{t+1} + \gamma V_\pi(s_{t+1}) - V_\pi(s_t)\end{align}
 ここで，重み係数 $\lambda$ を0から1まで変化させることで，バイアスと分散のトレードオフを調整可能．
 重み係数 $\lambda$ が小さいと，TD法に近づき，低分散・高バイアスで
 重み係数 $\lambda$ が大きいと，MC法に近づき，高分散・低バイアスとなる．
+
+#### この最小実装をGAEへ拡張するには
+
+前節のREINFORCE実装では，
+
+```python
+returns = reward_to_go(episode.rewards, gamma)
+advantages = returns - baseline
+```
+
+として，終端までの実報酬からadvantageを作った．GAEへ拡張するには，状態価値モデル $V_\phi(s)$ を追加し，
+
+```math
+\begin{align}
+\delta_t
+&=r_{t+1}+\gamma(1-d_t)V_\phi(s_{t+1})-V_\phi(s_t),\\
+\hat A_t^{\mathrm{GAE}}
+&=\delta_t+\gamma\lambda(1-d_t)\hat A_{t+1}^{\mathrm{GAE}}
+\end{align}
+```
+
+をtrajectoryの終端側から計算する．ここで $d_t$ は行動後にepisodeが終了した場合に1，継続する場合に0となる終端フラグである．$(1-d_t)$ を掛けることで，終端状態の先に存在しない価値をbootstrapしないようにする．
+
+まず，価値モデルを追加する．
+
+```python
+class ValueModel(nn.Module):
+    """状態sから状態価値 V_φ(s) を出力するCritic。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.network = nn.Sequential(
+            nn.Embedding(num_embeddings=5, embedding_dim=16),
+            nn.Linear(16, 1),
+        )
+
+    def forward(self, states: torch.Tensor) -> torch.Tensor:
+        return self.network(states).squeeze(-1)
+```
+
+GAEでは $s_t$ だけでなく $s_{t+1}$ と $d_t$ が必要になる．したがって，`Episode`へ次の状態と終端フラグを追加する．
+
+```python
+@dataclass
+class Episode:
+    states: list[int]
+    actions: list[int]
+    rewards: list[float]
+    next_states: list[int]
+    dones: list[bool]
+```
+
+`collect_episode()` でも，環境から返された値を保存する．
+
+```python
+def collect_episode(env: LineWorld, policy: Policy) -> Episode:
+    states: list[int] = []
+    actions: list[int] = []
+    rewards: list[float] = []
+    next_states: list[int] = []
+    dones: list[bool] = []
+
+    state = env.reset()
+    done = False
+
+    while not done:
+        state_tensor = torch.tensor([state], dtype=torch.long)
+        with torch.no_grad():
+            distribution = Categorical(logits=policy(state_tensor))
+            action = int(distribution.sample().item())
+
+        next_state, reward, done = env.step(action)
+
+        states.append(state)
+        actions.append(action)
+        rewards.append(reward)
+        next_states.append(next_state)
+        dones.append(done)
+        state = next_state
+
+    return Episode(
+        states=states,
+        actions=actions,
+        rewards=rewards,
+        next_states=next_states,
+        dones=dones,
+    )
+```
+
+次に，GAEを計算する関数を作る．
+
+```python
+def compute_gae(
+    rewards: torch.Tensor,
+    values: torch.Tensor,
+    next_values: torch.Tensor,
+    dones: torch.Tensor,
+    gamma: float,
+    gae_lambda: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """1本のtrajectoryについてGAEとValue学習ターゲットを返す。"""
+    not_done = 1.0 - dones
+
+    # δ_t = r_{t+1} + γ(1-d_t)V(s_{t+1}) - V(s_t)
+    deltas = rewards + gamma * not_done * next_values - values
+
+    advantages = torch.zeros_like(rewards)
+    running_advantage = torch.tensor(0.0, dtype=rewards.dtype)
+
+    # A_t = δ_t + γλ(1-d_t)A_{t+1} を終端側から計算する。
+    for t in reversed(range(len(rewards))):
+        running_advantage = (
+            deltas[t]
+            + gamma * gae_lambda * not_done[t] * running_advantage
+        )
+        advantages[t] = running_advantage
+
+    # A_t = Q_t - V(s_t) より、Criticの教師信号は A_t + V(s_t)。
+    value_targets = advantages + values
+    return advantages, value_targets
+```
+
+数式とコードは次のように対応する．
+
+| 数式 | コード |
+| --- | --- |
+| $r_{t+1}$ | `rewards[t]` |
+| $V_\phi(s_t)$ | `values[t]` |
+| $V_\phi(s_{t+1})$ | `next_values[t]` |
+| $d_t$ | `dones[t]` |
+| $\delta_t$ | `deltas[t]` |
+| $\gamma\lambda$ | `gamma * gae_lambda` |
+| $\hat A_t^{\mathrm{GAE}}$ | `advantages[t]` |
+| $\hat A_t+V_\phi(s_t)$ | `value_targets[t]` |
+
+最後に，REINFORCE版の `train_step()` をActorとCriticの同時更新へ置き換える．GAEの再帰計算はepisode境界をまたいではいけないため，最初にepisodeごとに計算し，その後でテンソルを連結する．
+
+```python
+def train_step_with_gae(
+    policy: Policy,
+    value_model: ValueModel,
+    optimizer: torch.optim.Optimizer,
+    episodes: list[Episode],
+    gamma: float,
+    gae_lambda: float,
+    value_coef: float = 0.5,
+) -> dict[str, float]:
+    all_states: list[torch.Tensor] = []
+    all_actions: list[torch.Tensor] = []
+    all_advantages: list[torch.Tensor] = []
+    all_value_targets: list[torch.Tensor] = []
+
+    for episode in episodes:
+        states = torch.tensor(episode.states, dtype=torch.long)
+        actions = torch.tensor(episode.actions, dtype=torch.long)
+        rewards = torch.tensor(episode.rewards, dtype=torch.float32)
+        next_states = torch.tensor(episode.next_states, dtype=torch.long)
+        dones = torch.tensor(episode.dones, dtype=torch.float32)
+
+        # GAEは今回の更新で固定して使うターゲットなので勾配を持たせない。
+        with torch.no_grad():
+            values = value_model(states)
+            next_values = value_model(next_states)
+            advantages, value_targets = compute_gae(
+                rewards=rewards,
+                values=values,
+                next_values=next_values,
+                dones=dones,
+                gamma=gamma,
+                gae_lambda=gae_lambda,
+            )
+
+        all_states.append(states)
+        all_actions.append(actions)
+        all_advantages.append(advantages)
+        all_value_targets.append(value_targets)
+
+    states = torch.cat(all_states)
+    actions = torch.cat(all_actions)
+    advantages = torch.cat(all_advantages)
+    value_targets = torch.cat(all_value_targets)
+
+    # Advantageのスケールを揃えて方策更新を安定させる。
+    advantages = (advantages - advantages.mean()) / (
+        advantages.std(unbiased=False) + 1e-8
+    )
+
+    distribution = Categorical(logits=policy(states))
+    selected_log_probs = distribution.log_prob(actions)
+    predicted_values = value_model(states)
+
+    # Actor: GAEが正の行動を強化し、負の行動を抑制する。
+    policy_loss = -(selected_log_probs * advantages.detach()).mean()
+
+    # Critic: GAEから作ったvalue targetへ状態価値を近づける。
+    value_loss = torch.nn.functional.mse_loss(
+        predicted_values,
+        value_targets.detach(),
+    )
+
+    total_loss = policy_loss + value_coef * value_loss
+
+    optimizer.zero_grad()
+    total_loss.backward()
+    optimizer.step()
+
+    return {
+        "total_loss": float(total_loss.item()),
+        "policy_loss": float(policy_loss.item()),
+        "value_loss": float(value_loss.item()),
+    }
+```
+
+PolicyとValueモデルを一つのoptimizerで更新する場合は，次のように両方のパラメータを渡す．
+
+```python
+policy = Policy()
+value_model = ValueModel()
+optimizer = torch.optim.Adam(
+    list(policy.parameters()) + list(value_model.parameters()),
+    lr=3e-2,
+)
+
+for iteration in range(300):
+    episodes = [collect_episode(env, policy) for _ in range(32)]
+    metrics = train_step_with_gae(
+        policy=policy,
+        value_model=value_model,
+        optimizer=optimizer,
+        episodes=episodes,
+        gamma=0.99,
+        gae_lambda=0.95,
+        value_coef=0.5,
+    )
+```
+
+REINFORCE版との本質的な差分は次のとおりである．
+
+```text
+REINFORCE:
+    実際の終端報酬からreward-to-goを計算
+    G_t - baselineをadvantageとして使用
+
+GAE:
+    CriticでV(s_t)とV(s_{t+1})を計算
+    各時刻のTD誤差δ_tを計算
+    TD誤差を後ろからγλで累積
+    ActorとCriticをそれぞれの損失で更新
+```
+
+実装時には，次を確認する必要がある．
+
+- GAEをepisodeごとに計算し，異なるepisodeをつないでいないか
+- 終端時に `next_value` が加算されないよう `1 - done` を掛けているか
+- GAEとvalue targetを更新中の固定ターゲットとして扱っているか
+- `policy_loss`では `advantages.detach()` を使用しているか
+- `value_loss`では `value_targets.detach()` を使用しているか
+- `gae_lambda=0` で1-step TDに近づくか
+- `gae_lambda=1` でMonte Carlo型の推定に近づくか
+
+この最小環境では時間切れも `done=True` として終端扱いしている．実用環境で `terminated` と `truncated` が区別される場合，真の終端である `terminated` ではbootstrapを止め，時間制限による `truncated` では通常 $V(s_{t+1})$ をbootstrapする．
 
 ## 9. TRPO
 TRPOでは，ある方策 $\tilde{\pi}$と他の方策 $\pi$との収益期待値の差の公式
