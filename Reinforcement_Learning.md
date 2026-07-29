@@ -347,7 +347,7 @@ L_\pi(\theta) = - \mathbb{E}_{\tau \sim \pi_{\theta_{\rm old}}}
 
 ### コードセクション: REINFORCE　を最小構成で実装する
 
-ここでは，方策勾配法を，外部の強化学習環境に依存しない小さな例を紹介する．
+ここでは，方策勾配法を自分で実装できるようになることを目的として，外部の強化学習環境に依存しない小さな例を紹介すする．
 扱う環境は `LineWorld` とする．エージェントは一次元のマス上におり，左端へ到達すると $-1$，右端へ到達すると $+1$ の報酬を得る．
 
 | 状態 | 0 | 1 | 2 | 3 | 4 |
@@ -838,10 +838,7 @@ def compute_gae(
 
     # A_t = δ_t + γλ(1-d_t)A_{t+1} を終端側から計算する。
     for t in reversed(range(len(rewards))):
-        running_advantage = (
-            deltas[t]
-            + gamma * gae_lambda * not_done[t] * running_advantage
-        )
+        running_advantage = (deltas[t] + gamma * gae_lambda * not_done[t] * running_advantage)
         advantages[t] = running_advantage
 
     # A_t = Q_t - V(s_t) より、Criticの教師信号は A_t + V(s_t)。
@@ -910,6 +907,7 @@ def train_step_with_gae(
     value_targets = torch.cat(all_value_targets)
 
     # Advantageのスケールを揃えて方策更新を安定させる。
+    # GAEで得られたAdvantageの平均を0、標準偏差を1に正規化して、方策勾配の大きさを安定させる処理
     advantages = (advantages - advantages.mean()) / (
         advantages.std(unbiased=False) + 1e-8
     )
@@ -968,7 +966,7 @@ REINFORCE版との本質的な差分は次のとおりである．
 ```text
 REINFORCE:
     実際の終端報酬からreward-to-goを計算
-    G_t - baselineをadvantageとして使用
+    G_t - baseline を advantage として使用
 
 GAE:
     CriticでV(s_t)とV(s_{t+1})を計算
@@ -1060,6 +1058,263 @@ L_{\mathrm{PPO}}(\theta)
 また，TRPOからの改善として，KLダイバージェンスをロスに入れる手法もここで提案された．
 PPOは基本的に，actor-critic で用いられ，この場合，状態価値関数 $V_\pi$ がcritic となる．
 PPOにおけるadvantage の推定には，Generalized Advantage Estimation (GAE)が用いられる．
+- Entropy正則化を行うことで、方策が早い段階で特定の行動だけに偏ることを防ぎ、探索を維持することが可能である．
+
+### コードセクション: LineWorldをPPOで学習する
+
+ここでは，前節までに実装した `LineWorld`，`Policy`，`ValueModel`，`Episode`，`collect_episode()`，`compute_gae()` を使ってPPOへ拡張する．REINFORCEとの重要な違いは，trajectory収集時の対数確率を `old_log_probs` として保存し，同じtrajectoryを複数回更新することである．更新中の方策で再計算した `current_log_probs` との比を取ることで，更新前の方策からどれだけ変化したかを測定する．
+
+まず，PPO更新に必要なテンソルをまとめる．
+
+```python
+@dataclass
+class PPOBatch:
+    states: torch.Tensor
+    actions: torch.Tensor
+    old_log_probs: torch.Tensor
+    advantages: torch.Tensor
+    value_targets: torch.Tensor
+```
+
+収集したepisodeから，old log probability と GAE を計算する．この関数を呼んでからPPO更新が終わるまで，`old_log_probs`を再計算してはいけない．
+
+```python
+def build_ppo_batch(
+    policy: Policy,
+    value_model: ValueModel,
+    episodes: list[Episode],
+    gamma: float,
+    gae_lambda: float,
+) -> PPOBatch:
+    all_states: list[torch.Tensor] = []
+    all_actions: list[torch.Tensor] = []
+    all_old_log_probs: list[torch.Tensor] = []
+    all_advantages: list[torch.Tensor] = []
+    all_value_targets: list[torch.Tensor] = []
+
+    # π_old と V_oldから作る値は、PPO更新中はすべて固定する。
+    with torch.no_grad():
+        for episode in episodes:
+            states = torch.tensor(episode.states, dtype=torch.long)
+            actions = torch.tensor(episode.actions, dtype=torch.long)
+            rewards = torch.tensor(episode.rewards, dtype=torch.float32)
+            next_states = torch.tensor(episode.next_states, dtype=torch.long)
+            dones = torch.tensor(episode.dones, dtype=torch.float32)
+
+            old_distribution = Categorical(logits=policy(states))
+            old_log_probs = old_distribution.log_prob(actions)
+
+            values = value_model(states)
+            next_values = value_model(next_states)
+            advantages, value_targets = compute_gae(
+                rewards=rewards,
+                values=values,
+                next_values=next_values,
+                dones=dones,
+                gamma=gamma,
+                gae_lambda=gae_lambda,
+            )
+
+            all_states.append(states)
+            all_actions.append(actions)
+            all_old_log_probs.append(old_log_probs)
+            all_advantages.append(advantages)
+            all_value_targets.append(value_targets)
+
+    states = torch.cat(all_states)
+    actions = torch.cat(all_actions)
+    old_log_probs = torch.cat(all_old_log_probs)
+    advantages = torch.cat(all_advantages)
+    value_targets = torch.cat(all_value_targets)
+
+    # GAEで得られたAdvantageの平均を0、標準偏差を1に正規化して、方策勾配の大きさを安定させる処理
+    advantages = (advantages - advantages.mean()) / (
+        advantages.std(unbiased=False) + 1e-8
+    )
+
+    return PPOBatch(
+        states=states,
+        actions=actions,
+        old_log_probs=old_log_probs,
+        advantages=advantages,
+        value_targets=value_targets,
+    )
+```
+
+次に，PPOのclipped objectiveを実装する．
+
+```python
+def ppo_update(
+    policy: Policy,
+    value_model: ValueModel,
+    optimizer: torch.optim.Optimizer,
+    batch: PPOBatch,
+    clip_eps: float,
+    update_epochs: int,
+    minibatch_size: int,
+    value_coef: float = 0.5,
+    entropy_coef: float = 0.01,
+) -> dict[str, float]:
+    num_steps = len(batch.states)
+    last_policy_loss = 0.0
+    last_value_loss = 0.0
+    last_clip_fraction = 0.0
+
+    # 同じ pi_old のデータを複数epoch使う。
+    for _ in range(update_epochs):
+        permutation = torch.randperm(num_steps)
+
+        for offset in range(0, num_steps, minibatch_size):
+            indices = permutation[offset : offset + minibatch_size]
+
+            states = batch.states[indices]
+            actions = batch.actions[indices]
+            old_log_probs = batch.old_log_probs[indices]
+            advantages = batch.advantages[indices]
+            value_targets = batch.value_targets[indices]
+
+            current_distribution = Categorical(logits=policy(states))
+            current_log_probs = current_distribution.log_prob(actions)
+
+            # ρ_t(θ) = π_θ(a_t|s_t) / π_old(a_t|s_t)
+            # 確率の除算ではなく、log probabilityの差をexpする。
+            ratios = torch.exp(current_log_probs - old_log_probs)
+
+            unclipped_objective = ratios * advantages
+            clipped_objective = torch.clamp(
+                ratios,
+                1.0 - clip_eps,
+                1.0 + clip_eps,
+            ) * advantages
+
+            # PPOは目的関数を最大化するため、損失では負号を付ける。
+            policy_loss = -torch.min(
+                unclipped_objective,
+                clipped_objective,
+            ).mean()
+
+            # 価値モデルの誤差最適化
+            predicted_values = value_model(states)
+            value_loss = torch.nn.functional.mse_loss(
+                predicted_values,
+                value_targets,
+            )
+
+            # 方策が早い段階で特定の行動だけに偏ることを防ぎ、探索を維持するために
+            # Entropyを最大化したいので、最小化するlossでは負号を付ける。
+            entropy = current_distribution.entropy().mean()
+            total_loss = (
+                policy_loss
+                + value_coef * value_loss
+                - entropy_coef * entropy
+            )
+
+            optimizer.zero_grad()
+            total_loss.backward()
+            torch.nn.utils.clip_grad_norm_(
+                list(policy.parameters()) + list(value_model.parameters()),
+                max_norm=1.0,
+            )
+            optimizer.step()
+
+            with torch.no_grad():
+                clip_fraction = (
+                    torch.abs(ratios - 1.0) > clip_eps
+                ).float().mean()
+
+            last_policy_loss = float(policy_loss.item())
+            last_value_loss = float(value_loss.item())
+            last_clip_fraction = float(clip_fraction.item())
+
+    return {
+        "policy_loss": last_policy_loss,
+        "value_loss": last_value_loss,
+        "clip_fraction": last_clip_fraction,
+    }
+```
+
+PPO全体の学習ループは次のようになる．
+
+```python
+def train_ppo() -> None:
+    env = LineWorld()
+    policy = Policy()
+    value_model = ValueModel()
+    optimizer = torch.optim.Adam(
+        list(policy.parameters()) + list(value_model.parameters()),
+        lr=3e-3,
+    )
+
+    for iteration in range(300):
+        # 1. 現在方策π_oldでon-policyデータを収集する。
+        episodes = [collect_episode(env, policy) for _ in range(32)]
+
+        # 2. old log probabilityとGAEを一度だけ計算して固定する。
+        batch = build_ppo_batch(
+            policy=policy,
+            value_model=value_model,
+            episodes=episodes,
+            gamma=0.99,
+            gae_lambda=0.95,
+        )
+
+        # 3. 同じデータを使って方策を複数epoch更新する。
+        metrics = ppo_update(
+            policy=policy,
+            value_model=value_model,
+            optimizer=optimizer,
+            batch=batch,
+            clip_eps=0.2,
+            update_epochs=4,
+            minibatch_size=64,
+        )
+
+        if iteration % 50 == 0:
+            mean_return = (
+                sum(sum(ep.rewards) for ep in episodes) / len(episodes)
+            )
+            left_prob, right_prob = action_probabilities(policy)
+            print(
+                f"iteration={iteration:3d} "
+                f"return={mean_return:+.3f} "
+                f"policy_loss={metrics['policy_loss']:+.4f} "
+                f"clip_fraction={metrics['clip_fraction']:.3f} "
+                f"P(right)={right_prob:.3f}"
+            )
+```
+
+数式とコードの対応は次のとおりである．
+
+| 数式 | コード |
+| --- | --- |
+| $\pi_{\theta_{\rm old}}$ | `build_ppo_batch()`を呼んだ時点の`policy` |
+| $\log\pi_{\theta_{\rm old}}(a_t\mid s_t)$ | `batch.old_log_probs` |
+| $\pi_\theta$ | `ppo_update()`内で更新される`policy` |
+| $\log\pi_\theta(a_t\mid s_t)$ | `current_log_probs` |
+| $\rho_t(\theta)$ | `torch.exp(current_log_probs - old_log_probs)` |
+| $\hat A_t^{\mathrm{GAE}}$ | `batch.advantages` |
+| $\rho_t\hat A_t$ | `unclipped_objective` |
+| $\mathrm{clip}(\rho_t,1-\epsilon,1+\epsilon)\hat A_t$ | `clipped_objective` |
+| $-\mathbb E[\min(\cdot,\cdot)]$ | `policy_loss` |
+| $\left(V_\phi(s_t)-\hat V_t\right)^2$ | `value_loss` |
+
+最初のPPO epochでは，更新前なので
+
+```math
+\log\pi_\theta(a_t\mid s_t)
+=\log\pi_{\theta_{\rm old}}(a_t\mid s_t)
+```
+
+であり，`ratios`は1となる．1回目の`optimizer.step()`以降はcurrent policyだけが変化し，`old_log_probs`は固定されているため，ratioが1から離れ始める．この状態で同じデータを複数回使うことにより，clippingが意味を持つ．
+
+実装時には，次を確認する必要がある．
+
+- trajectory収集後，更新前に `old_log_probs` を保存しているか
+- PPOの各epochで `old_log_probs` を再計算していないか
+- 確率比を `exp(current_log_prob - old_log_prob)` で計算しているか
+- Actorの目的関数に `torch.min()` を使っているか
+- `advantages`と`value_targets`を固定ターゲットとして扱っているか
+- 複数epoch更新後は，新しい方策でtrajectoryを集め直しているか
 
 PPO schematic view
  ```mermaid
@@ -1118,99 +1373,520 @@ D_{\mathrm{KL}}\left(\pi_\theta \| \pi_{\mathrm{ref}}\right)=\dfrac{\pi_{\mathrm
 ```
 を使用する．これは，KLの不偏推定量でかつ，非負となる．
 
-GRPO schematic view
-```mermaid
-%%{init: {"flowchart": {"nodeSpacing": 12, "rankSpacing": 10, "htmlLabels": true}, "themeVariables": {"fontSize": "12px"}}}%%
-flowchart LR
-    Q["s"] --> P["Policy"]
-    P["Policy"] --> O["$a_1,\ldots,a_G$"]
+### コードセクション: Renjuのtrajectory-group GRPO
 
-    O --> M["Reference & Reward"]
-    M --> R["$r_1,\ldots,r_G$ & KL"]
+ここでは，`src/renju_transformer/grpo.py` に実装されているtrajectory-group GRPOを，実際の処理順に沿って説明する．
 
-    R --> A["$A_1,\ldots,A_G$"]
-    A --> P
+この実装では，同じ開始盤面かつ同じpolicy担当色から複数の対局を生成する．
+各trajectoryの報酬は，policyが打った手の局所報酬の合計と終局勝敗bonusから作る．
+同じgroup内でtrajectory報酬を標準化し，そのtrajectoryでpolicyが打った全着手へ同じadvantageを割り当てる．
 
-    classDef trained fill:#fff0bd,stroke:#34495e;
-    classDef frozen fill:#dcecff,stroke:#34495e;
+#### 1. trajectoryに保存する値
 
-    class P trained;
-    class M frozen;
+実装で使用するデータクラスは次の形である．
+
+```python
+@dataclass(slots=True)
+class TrajectoryStep:
+    board: list[int]
+    action: int
+    actor: int
+    old_log_prob: float
+    local_reward: float
+    group_index: int
+    chosen: bool
+    learn: bool
+
+
+@dataclass(slots=True)
+class Trajectory:
+    steps: list[TrajectoryStep]
+    winner: int | None
+    final_board: list[int]
+    total_reward: float
+    actual_plies: int
+    policy_player: int | None = None
 ```
 
-## 12. RenjuTransformer への対応
+各フィールドの意味は次のとおりである．
 
-ここから，このリポジトリの RenjuTransformer に対応させて考える．
+| フィールド | 内容 |
+| --- | --- |
+| `board` | 着手前の盤面 $s_t$ |
+| `action` | 候補または実際に選ばれた着手 $a_t$ |
+| `actor` | その手を打つ黒または白 |
+| `old_log_prob` | trajectory生成時の行動対数確率 |
+| `local_reward` | TSS・即勝ち・即負け・形などから得た局所報酬 |
+| `group_index` | trajectory内の手数index |
+| `chosen` | 候補のうち実際に盤面へ反映した手か |
+| `learn` | policyの更新対象となる手か |
+| `total_reward` | trajectory単位で比較する合計報酬 |
+| `policy_player` | このtrajectoryでpolicyが担当する色 |
 
-Renju では，各要素は次のように対応する．
+trajectory-groupでは1局面につき1手だけサンプリングするため，保存されるstepの`chosen`は常に`True`になる．
+`TrajectoryStep`はstep-group objectiveとも共用しているため，候補比較用のフィールドも持っている．
 
-- 状態 $s_t$: 現在の 15x15 盤面，手番，合法手集合
-- 行動 $a_t$: 盤面上のどこに打つか
-- 報酬 $r_t$: 即勝ち，禁じ手，相手の即勝ち防御，TSS評価，終局勝敗など
-- 方策 $\pi_\theta(a \mid s)$: モデルが局面 $s$ に対して，各合法手 $a$ を選ぶ確率分布
-- エピソード: 1試合
+Referenceのlog probabilityはtrajectoryには保存しない．固定reference modelから，GRPO lossを計算するたびに同じ状態・同じ行動について再計算する．
+一方，新旧policyの比率に必要な`old_log_prob`はtrajectory生成時に保存し，更新中は固定する．
 
-RenjuTransformer の GRPO では，教師あり学習済みモデルを policy model として読み込み，同じ checkpoint から固定 reference model も用意する．policy は候補手や軌跡を生成し，TSS やルール評価，終局勝敗に基づく報酬で更新される．
+#### 2. policy担当色と対戦相手を決める
 
-報酬は概念的には次の形である．
-```math
-reward(s, a)= TSS\_score(s_{\mathrm{after}\ a}) + rule\_reward(s, a) + shape\_reward(s_{\mathrm{after}\ a}, a)+ final\_result\_bonus
+`resolve_policy_players()`は，設定からtrajectory groupを作るpolicy担当色を返す．
+
+```python
+def resolve_policy_players(cfg, rollout_index=None):
+    learning_player = str(
+        cfg.grpo.step_group.get("learning_player", "both")
+    )
+
+    if learning_player == "black":
+        return [BLACK]
+    if learning_player == "white":
+        return [WHITE]
+    if learning_player == "both" and rollout_index is None:
+        return [BLACK, WHITE]
+    ...
 ```
 
-主な報酬は次の通り．
+デフォルトの`learning_player=both`では，同じ開始盤面に対して次の2 groupを別々に生成する．
 
-- 即勝ちならプラス
-- 非合法手や禁じ手ならマイナス
-- 相手に即勝ちを許すならマイナス
-- 相手の即勝ちを防ぐなら小さくプラス
-- 四や開三を作るなら小さくプラス
-- TSS が強制勝ちを見つけたらプラス
-- TSS が強制負けを見つけたらマイナス
-- trajectory 系では終局勝敗 bonus を加える
-
-Renju では勝敗だけを報酬にすると，報酬が終局まで得られず疎になる．TSS を使うことで，各手の直後に「戦術的に良いか悪いか」を評価できるため，GRPO の group 内比較に使いやすい．
-
-## 13. RenjuTransformer の GRPO objective
-
-このリポジトリでは，主に `state`，`step_group`，`trajectory_group` の3種類の objective がある．
-### state
-`state` は，CSV 由来の各局面を独立に扱う．終局までは進めず，同じ局面から複数候補手を出して比較する．
 ```text
-局面 s
--> group_size 個の候補手
--> 各候補に TSS/ルール報酬
--> group 内で advantage 正規化
--> GRPO 更新
+group 1: policyが黒，referenceが白
+group 2: policyが白，referenceが黒
 ```
 
-軽く回せる一方で，長期的な勝敗は直接見ない．
-### step_group
-`step_group` は，開始局面から試合を進めながら，各局面で候補手 group を作る．
+各groupはそれぞれ`grpo.trajectory_group.group_size`本のtrajectoryを持つ．黒policyのtrajectoryと白policyのtrajectoryを同じgroupとして正規化することはない．
+
+`grpo.step_group.opponent=reference`では，policy担当色以外の手を固定reference modelが打つ．`opponent=self`では両方の色をpolicy modelが打つが，`learn=True`になるのは指定したpolicy担当色の手だけである．
+
+#### 3. 合法手から1手をサンプリングする
+
+着手のサンプリングでは，非合法手のlogitを`-inf`へ置き換えてからsoftmaxを計算する．
+
+```python
+@torch.no_grad()
+def sample_actions_from_logits(
+    logits: torch.Tensor,
+    legal_masks: torch.Tensor,
+    sample_count: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    masked_logits = logits.masked_fill(
+        ~legal_masks,
+        float("-inf"),
+    )
+    probabilities = torch.softmax(masked_logits, dim=-1)
+
+    sampled_actions = []
+    for row_index in range(probabilities.size(0)):
+        legal_count = int(legal_masks[row_index].sum().item())
+        replacement = legal_count < sample_count
+        sampled_actions.append(
+            torch.multinomial(
+                probabilities[row_index],
+                num_samples=sample_count,
+                replacement=replacement,
+            )
+        )
+
+    actions = torch.stack(sampled_actions, dim=0)
+    log_probs = torch.log(
+        probabilities.gather(dim=-1, index=actions).clamp_min(1e-12)
+    )
+    return actions, log_probs
+```
+
+trajectory-groupからは`sample_count=1`で呼ばれる．したがって各手番でpolicyまたはreferenceから1手をサンプリングし，その手をそのまま盤面へ反映する．
+
+#### 4. 1本のtrajectoryを生成する
+
+1本の対局生成は`rollout_policy_episode()`が担当する．
+関数全体に`@torch.no_grad()`が付いているため，trajectory収集中に勾配は作られない．呼び出し側ではpolicyとreferenceを`eval()`へ切り替えてからrolloutする．
+
+処理の中心は次のとおりである．
+
+```python
+@torch.no_grad()
+def rollout_policy_episode(
+    start_board,
+    policy_player,
+    policy_model,
+    reference_model,
+    tokenizer,
+    reward_evaluator,
+    cfg,
+    device,
+    *,
+    sample_count,
+    default_opponent,
+    reward_mode,
+):
+    board = start_board.copy()
+    steps = []
+    winner = current_winner(board)
+    actual_plies = 0
+    max_plies = int(cfg.grpo.step_group.max_plies)
+    opponent = str(
+        cfg.grpo.step_group.get("opponent", default_opponent)
+    )
+
+    while (
+        winner is None
+        and not board_is_full(board)
+        and actual_plies < max_plies
+    ):
+        actor = infer_player(board)
+        learn = policy_player is None or actor == policy_player
+
+        acting_model = (
+            policy_model
+            if learn or opponent == "self"
+            else reference_model
+        )
+
+        candidate_actions, old_log_probs = sample_policy_actions(
+            acting_model,
+            tokenizer,
+            board,
+            sample_count=sample_count,
+            device=device,
+        )
+
+        local_rewards = reward_evaluator.evaluate_batch(
+            [board],
+            [candidate_actions],
+        )[0]
+
+        chosen_index = 0
+        chosen_action = candidate_actions[chosen_index]
+
+        steps.append(
+            TrajectoryStep(
+                board=board.copy(),
+                action=chosen_action,
+                actor=actor,
+                old_log_prob=old_log_probs[chosen_index],
+                local_reward=(
+                    float(local_rewards[chosen_index])
+                    * float(cfg.grpo.step_group.tss_weight)
+                ),
+                group_index=actual_plies,
+                chosen=True,
+                learn=learn,
+            )
+        )
+
+        board = board_with_move(board, chosen_action, actor)
+        winner = winner_after_move(board, chosen_action, actor)
+        actual_plies += 1
+```
+
+`board.copy()`によって着手前の盤面を保存してから，`board_with_move()`で次状態へ進める．勝敗が決まる，盤面が埋まる，合法手がなくなる，または`max_plies`へ到達するとrolloutを終了する．
+
+各手の`local_reward`は`GrpoRewardEvaluator`が計算する．設定に応じて，合法性，即勝ち・即負け，相手の即勝ちのブロック，四や開三，TSSによる強制勝ち・強制負けなどが含まれる．
+
+#### 5. trajectory報酬を作る
+
+trajectory-groupの比較に使う報酬は，policy担当色が実際に打った手の局所報酬だけを合計し，最後に終局結果を1回加えたものである．
+
+```python
+if reward_mode == "trajectory_group":
+    total_reward = sum(
+        step.local_reward
+        for step in steps
+        if step.learn
+    )
+    total_reward += final_reward_for_actor(
+        winner,
+        policy_player,
+        cfg,
+    )
+```
+
+数式で表すと，
+
+```math
+R(\tau_i)
+=
+\sum_{t:\,\mathrm{learn}_{i,t}=\mathrm{True}}
+r_{i,t}^{\mathrm{local}}
++
+r_i^{\mathrm{terminal}}
+```
+
+となる．終局報酬は開始手番視点ではなく，そのtrajectoryの`policy_player`視点で決まる．
+
+```python
+def final_reward_for_actor(winner, actor, cfg):
+    if winner is None:
+        return float(cfg.grpo.step_group.draw_reward)
+    if winner == actor:
+        return float(cfg.grpo.step_group.final_result_weight)
+    return -float(cfg.grpo.step_group.final_result_weight)
+```
+
+したがってデフォルト設定では，
+
 ```text
-開始局面
-while not terminal:
-  現局面で group_size 個の候補手を出す
-  各候補に TSS 報酬を付ける
-  1手を選んで盤面を進める
-終局:
-  採用された手に終局勝敗 bonus を足す
+policy担当色が勝利: +1
+policy担当色が敗北: -1
+引き分け・未決着:   0
 ```
-局面ごとの候補比較ができるため，TSS による戦術学習を入れやすい．
 
-### trajectory_group
+が局所報酬の合計へ加わる．reference担当色が打った手の局所報酬はstepには保存されるが，trajectoryの`total_reward`には含めない．
 
-`trajectory_group` は，同じ開始局面から終局までの複数の軌跡を作り，軌跡単位の合計報酬で比較する．
+#### 6. 同じ開始盤面からG本を生成する
+
+学習ループでは，policyとreferenceを評価modeにしてから，同じ開始盤面・同じpolicy担当色で`rollout_policy_episode()`をG回呼び出す．
+
+```python
+policy_model.eval()
+reference_model.eval()
+
+for policy_player in policy_players:
+    trajectories = [
+        rollout_policy_episode(
+            prompt,
+            policy_player,
+            policy_model,
+            reference_model,
+            tokenizer,
+            reward_evaluator,
+            cfg,
+            device,
+            sample_count=1,
+            default_opponent="reference",
+            reward_mode="trajectory_group",
+        )
+        for _ in range(trajectory_group_size)
+    ]
+```
+
+各rolloutの先頭で`start_board.copy()`を行うため，G本は同じ内容の開始盤面から独立して分岐する．現在の実装はG本を手数ごとのGPU batchとして同時進行させるのではなく，1本ずつ直列に生成する．ただし，G本すべてを生成し終わるまでpolicyのoptimizer更新は行わない．
+
+1回のoptimizer更新では，`grpo.step_group.prompts_per_step`個の開始盤面を処理する．`learning_player=both`なら，各開始盤面について黒policy groupと白policy groupの両方を生成する．
+
+#### 7. group-relative advantageを計算する
+
+同じ開始盤面かつ同じpolicy担当色のG本について，`total_reward`を標準化する．
+
+```python
+def normalize_group_advantages(
+    rewards: torch.Tensor,
+    epsilon: float,
+) -> torch.Tensor:
+    mean = rewards.mean(dim=-1, keepdim=True)
+    std = rewards.std(
+        dim=-1,
+        keepdim=True,
+        unbiased=False,
+    )
+    return (rewards - mean) / (std + epsilon)
+```
+
+trajectory $i$のadvantageは，
 
 ```math
-R(\tau_i) = \sum_{t \in \mathrm{policy\ turns}} r_t+ final\_result\_reward
+\hat A_i
+=
+\frac{
+R(\tau_i)-\mu_R
+}{
+\sigma_R+\delta
+}
 ```
-同じ開始局面・同じ policy 色の中で正規化する．
+
+である．G本の報酬がすべて同じ場合，標準偏差は0になり，全trajectoryのadvantageも0になる．このgroupからpolicy gradientは得られないが，KL項とentropy項は計算される．
+
+#### 8. policyの着手へadvantageを割り当てる
+
+`flatten_trajectories()`は各trajectoryのadvantageを，そのtrajectoryで`learn=True`となっている全stepへ同じ値で割り当てる．
+
+```python
+for trajectory, advantage in zip(
+    learnable_trajectories,
+    advantages.tolist(),
+    strict=True,
+):
+    for step in trajectory.steps:
+        if not step.learn:
+            continue
+
+        boards.append(step.board)
+        actions.append(step.action)
+        old_log_probs.append(step.old_log_prob)
+        all_advantages.append(float(advantage))
+```
+
+referenceが打ったstepは盤面を進めるためだけに使い，GRPO更新用のflat batchには入れない．そのため，相手番のadvantageを符号反転する処理はない．黒policy groupでは黒の着手だけ，白policy groupでは白の着手だけを学習する．
+
+また，trajectory長による重みの補正は行っていない．全学習対象stepを後段のlossで単純平均するため，policy着手数の多い長いtrajectoryほど，optimizer更新に含まれる項数が多くなる．
+
+#### 9. GRPO lossを計算する
+
+更新時には，全stepの盤面をまとめてmodelへ入力する．current policyと固定referenceのlog probabilityは，同じ合法手maskと変換していない生logitsから計算する．
+
+```python
+logits = policy_model(input_ids)
+log_probs = masked_log_probs(logits, legal_masks)
+selected_log_probs = log_probs.gather(
+    dim=-1,
+    index=actions.reshape(-1, 1),
+).squeeze(-1)
+
+with torch.no_grad():
+    reference_logits = reference_model(input_ids)
+    reference_log_probs = masked_log_probs(
+        reference_logits,
+        legal_masks,
+    )
+    selected_reference_log_probs = reference_log_probs.gather(
+        dim=-1,
+        index=actions.reshape(-1, 1),
+    ).squeeze(-1)
+```
+
+新旧policyの確率比とclipped objectiveは，
+
 ```math
-\hat{A}_i=
-\frac{R(\tau_i) - \mathrm{mean}(R(\tau_1), \dots, R(\tau_G))}
-{\mathrm{std}(R(\tau_1), \dots, R(\tau_G)) + \delta}
+\rho_t(\theta)
+=
+\exp\left(
+\log\pi_\theta(a_t\mid s_t)
+-
+\log\pi_{\theta_{\mathrm{old}}}(a_t\mid s_t)
+\right)
 ```
-軌跡内の policy が実際に打った手すべてに，同じ軌跡 advantage を配る．勝利軌跡全体を強化しやすいが，どの手が勝因だったかの credit assignment は粗くなる．
+
+```python
+ratio = torch.exp(selected_log_probs - old_log_probs)
+clipped_ratio = ratio.clamp(
+    1.0 - cfg.grpo.clip_epsilon,
+    1.0 + cfg.grpo.clip_epsilon,
+)
+
+policy_loss = -torch.minimum(
+    ratio * advantages,
+    clipped_ratio * advantages,
+).mean()
+```
+
+で計算する．
+
+ReferenceとのKL近似には，
+
+```math
+x-\log x-1,
+\qquad
+x=\frac{\pi_{\mathrm{ref}}(a\mid s)}
+{\pi_\theta(a\mid s)}
+```
+
+を使う．
+
+```python
+log_ratio_to_ref = (
+    selected_reference_log_probs
+    - selected_log_probs
+)
+kl = (
+    torch.exp(log_ratio_to_ref)
+    - log_ratio_to_ref
+    - 1.0
+).mean()
+```
+
+さらに合法手分布のentropyを計算し，最終lossを，
+
+```math
+L
+=
+L_{\mathrm{policy}}
++
+\beta D_{\mathrm{KL}}
+-
+c_{\mathrm{entropy}}H(\pi_\theta)
+```
+
+として合成する．
+
+```python
+loss = (
+    policy_loss
+    + float(cfg.grpo.kl_beta) * kl
+    - float(cfg.grpo.entropy_coef) * entropy
+)
+```
+
+#### 10. 同じ収集データを複数epoch更新する
+
+rollout後，policyを`train()`へ戻し，複数prompt・複数groupから集めた全学習対象stepを1つのflat batchへまとめる．現在の実装はminibatchへ分割せず，flat batch全体を各update epochで使用する．
+
+```python
+policy_model.train()
+
+for _ in range(int(cfg.grpo.update_epochs)):
+    optimizer.zero_grad(set_to_none=True)
+
+    loss, update_metrics = compute_flat_grpo_loss(
+        policy_model,
+        reference_model,
+        input_ids,
+        legal_masks,
+        actions,
+        old_log_probs,
+        advantages,
+        cfg,
+    )
+
+    loss.backward()
+
+    if cfg.train.gradient_clip_norm is not None:
+        torch.nn.utils.clip_grad_norm_(
+            policy_model.parameters(),
+            cfg.train.gradient_clip_norm,
+        )
+
+    optimizer.step()
+```
+
+`old_log_probs`とadvantageは全update epochで固定する．reference modelは同じ教師ありcheckpointから初期化し，`requires_grad=False`としてoptimizer更新の対象外にする．
+
+モデルのdropout既定値は0であり，GRPOモデルをcheckpointから再構築するときも現在の`cfg.model.dropout`を使う．デフォルト設定では，rollout時の`eval()`と更新時の`train()`でdropoutによる確率変動は生じない．そのため，最初のoptimizer更新前は，収集時と更新時のpolicyが同じなら確率比は1になる．
+
+#### 11. 処理全体の対応
+
+| GRPOの処理 | 実装 |
+| --- | --- |
+| 開始盤面を作る | `build_start_prompts()` |
+| policy担当色を決める | `resolve_policy_players()` |
+| 1本の対局を生成する | `rollout_policy_episode()` |
+| 同一起点・同一policy色からG本作る | `train_trajectory_group_grpo_loop()` |
+| trajectory報酬を標準化する | `normalize_group_advantages()` |
+| policy着手へadvantageを配る | `flatten_trajectories()` |
+| PPO型clip・KL・entropyを計算する | `compute_flat_grpo_loss()` |
+| referenceを固定する | `load_policy_and_reference()` |
+
+処理の流れをまとめると次のようになる．
+
+```text
+開始盤面を選ぶ
+  ├─ policy=黒 のtrajectoryをG本直列生成
+  │    ├─ 黒はpolicyからサンプル
+  │    ├─ 白はreferenceからサンプル
+  │    └─ 黒の局所報酬合計 + 黒視点の終局報酬
+  └─ policy=白 のtrajectoryをG本直列生成
+       ├─ 白はpolicyからサンプル
+       ├─ 黒はreferenceからサンプル
+       └─ 白の局所報酬合計 + 白視点の終局報酬
+
+各group内でtrajectory報酬を標準化
+  ↓
+各trajectoryのpolicy着手だけをflat batchへ追加
+  ↓
+current policy / old policyの比率を計算
+  ↓
+clipped policy loss + KL - entropyでpolicyを更新
+```
 
 ## 14. まとめ
 
