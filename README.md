@@ -130,7 +130,7 @@ final_bonus_t = gamma ** distance_to_terminal * final_result_reward(actor_t)
 7. そのtrajectory内でpolicyが実際に打った手すべてに同じadvantageを配ります。
 8. reference/opponentが打った手は盤面を進めるためだけに使い、更新対象には入れません。
 
-`trajectory_group` では、同じ開始局面から複数本を比較するため、`grpo.temperature=1.0` から `1.2` 程度にしてtrajectoryのばらつきを作るのがおすすめです。勝敗bonusを使わない場合は `grpo.step_group.final_result_weight=0` にしてください。
+勝敗bonusを使わない場合は `grpo.step_group.final_result_weight=0` にしてください。
 
 trajectory group GRPO の自己対戦で `tss.so` を使う実行例:
 
@@ -153,7 +153,6 @@ nohup uv run python renju-transformer.py mode=grpo \
   grpo.step_group.learning_player=both \
   grpo.step_group.prompts_per_step=4 \
   grpo.trajectory_group.group_size=4 \
-  grpo.temperature=1.1 \
   grpo.step_group.max_plies=120 \
   grpo.step_group.final_result_weight=1.0 \
   grpo.reward.allow_immediate_loss=-1.2 \

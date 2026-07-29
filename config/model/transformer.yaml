@@ -4,7 +4,7 @@ d_model: 128
 nhead: 8
 num_layers: 4
 dim_feedforward: 256
-dropout: 0.1
+dropout: 0.0
 activation: gelu
 norm_first: false
 num_move_labels: 225

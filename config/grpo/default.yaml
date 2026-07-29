@@ -12,10 +12,6 @@ max_epochs: 1
 max_steps: null
 # 各局面でpolicyからサンプルする候補手数。同じ局面内の候補を比較してadvantageを作る。
 group_size: 8
-# policyから候補手をサンプルするときの温度。高いほど探索的、低いほど高確率手に寄る。
-# 低い: policyが元々高確率にしている手ばかり候補に出る
-# 高い: policyが低確率にしている手も候補に混ざる
-temperature: 1.0
 # 収集した同じサンプルに対して何回optimizer更新するか。
 update_epochs: 1
 # PPO/GRPO比率クリップ幅。policyがold policyから一度に動きすぎるのを抑える。

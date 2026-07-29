@@ -79,16 +79,12 @@ def sample_actions_from_logits(
     logits: torch.Tensor,
     legal_masks: torch.Tensor,
     sample_count: int,
-    temperature: float,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """masked logitsから合法手だけを温度付きでサンプリングする共通処理"""
-    # 温度チェック
-    if temperature <= 0:
-        raise ValueError("grpo.temperature must be positive.")
+    """masked logitsから合法手だけをサンプリングする共通処理"""
     if sample_count <= 0:
         raise ValueError("sample_count must be positive.")
-    # 非合法手をマスクして温度でスケーリング
-    masked_logits = logits.masked_fill(~legal_masks, float("-inf")) / temperature
+    # 非合法手をマスク
+    masked_logits = logits.masked_fill(~legal_masks, float("-inf"))
     # ソフトマックスで確率に変換
     probabilities = torch.softmax(masked_logits, dim=-1)
     sampled_actions: list[torch.Tensor] = []
@@ -241,7 +237,6 @@ def sample_policy_actions(
     tokenizer: RenjuTokenizer,
     board: list[int] | list[list[int]] | None,
     sample_count: int,
-    temperature: float,
     device: torch.device,
     *,
     input_ids: torch.Tensor | None = None,
@@ -274,7 +269,6 @@ def sample_policy_actions(
         logits,
         legal_masks,
         sample_count=sample_count,
-        temperature=temperature,
     )
     if return_tensors:
         return actions, log_probs
@@ -410,7 +404,6 @@ def rollout_policy_episode(
                 tokenizer,
                 board,
                 sample_count=sample_count,
-                temperature=float(cfg.grpo.temperature),
                 device=device,
             )
         except ValueError:
@@ -1445,7 +1438,6 @@ def train_state_grpo_loop(
                     tokenizer,
                     boards,
                     sample_count=int(cfg.grpo.group_size),
-                    temperature=float(cfg.grpo.temperature),
                     device=device,
                     input_ids=input_ids,
                     legal_masks=legal_masks,
@@ -1717,7 +1709,9 @@ def build_model_from_checkpoint(checkpoint: dict, cfg: DictConfig) -> RenjuTrans
         nhead=model_cfg["nhead"],  # アテンション頭数
         num_layers=model_cfg["num_layers"],  # トランスフォーマー層数
         dim_feedforward=model_cfg["dim_feedforward"],  # フィードフォワード層の次元
-        dropout=model_cfg["dropout"],  # ドロップアウト率
+        # GRPOではtrajectory収集時と更新時の確率比を安定させるため、
+        # checkpoint内の値ではなく現在設定のdropoutを使う。
+        dropout=float(cfg.model.dropout),
         activation=model_cfg["activation"],  # 活性化関数
         norm_first=model_cfg["norm_first"],  # 正規化を先行させるか
         num_move_labels=model_cfg["num_move_labels"],  # 手のラベル数
