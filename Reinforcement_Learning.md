@@ -76,7 +76,7 @@
  \downarrow \\
 方策 \pi に従って行動 A_t を選ぶ \\
  \downarrow \\
-環境が次の状態 S_{t+1} と報酬 R\left(S_t, A_t\right)を返す \\
+環境が次の状態 S_{t+1} と報酬 R_{t+1}を返す \\
  \downarrow \\
 これを終端 まで繰り返す \\
 \end{gathered}
@@ -125,6 +125,7 @@ G_{t} = R_{t+1} + \gamma\ G_{t+1}
 - $\gamma = 1.0$: 将来の報酬を弱めない
 - $\gamma = 0.99$: 遠い将来の報酬を少し弱く見る
 - $\gamma = 0$: 次の報酬だけを見る
+
 割引率を使う理由は，遠い未来の報酬ほど不確実であり，現在の行動との因果関係も弱くなりやすいからである．
 
 <a id="value-and-advantage"></a>
@@ -148,7 +149,7 @@ Q_\pi(s, a) & := \mathbb{E}_\pi\left[G_t \mid S_t=s, A_t=a \right] \\
 ```
 ここで， $Q_{\pi(s, a)}$ の行動 $a$ は，方策 $\pi$ には関係ないことに注意する．
 $Q_\pi(s, a)$ の行動 $a$ は自由に決定することができ，その行動の後は，方策 $\pi$ に従って行動する．
-また，最終行では，報酬 $R_{t+1}$ の期待値は方策 $\pi$ と無関係となるため除いた．
+最終行では，報酬 $R_{t+1}$ の期待値は方策 $\pi$ と無関係となるため除いた．
 
 この二つの価値関数の違いは
 - 状態価値関数 $V_\pi(s)$: この状態 $s$ はどれくらい良いか
@@ -246,7 +247,7 @@ Q_\pi(s, a)
 価値ベースでは，「行動そのもの」ではなく「その行動を取ったときの良さ・価値」，状態or行動価値関数を学習し，価値が最大になるように行動を選んでいく．
 代表的なものとして，状態 $s$ で行動 $a$ を取ったときの価値関数 $Q(s, a)$ を学習する手法が挙げられる．
 つまり，「この状態でこの行動を取ると，将来的にどれくらい報酬が得られそうか」を数値として学習していく．
-そして，過去に経験した軌跡 $(s, a, r, s')$ を使用し，価値関数が更新する．
+そして，過去に経験した軌跡 $(s, a, r, s')$ を使用し，価値関数が更新される．
 そのため，価値関数が更新されると，同じデータでも違う結果となり，同じデータでも再び学習使用可能となる．また，価値ベースは，最適行動を求めるために，全ての可能な行動を確認する必要があり
 ```math
 a^* = \arg \underset{a}{\max} Q_\pi(s, a)
@@ -745,7 +746,7 @@ L_\pi(\theta) = - \mathbb{E}_{\tau \sim \pi_{\theta_{\rm old}}}
 \mathbb{E}_{s_{t+1} \sim p\left(\cdot | s_t, a_t\right)} \left[r_{t+1} + \gamma V_\pi(s_{t+1}) - V_\pi(s_t)\right] & = \mathbb{E}_{s_{t+1} \sim p\left(\cdot | s_t, a_t\right)} \left[Q_\pi(s_t, a_t) - V_\pi(s_t)\right]= A_\pi(s_t, a_t) \\
 \end{align}
 ```
-である．TD誤差とは，環境モデルを使用せず，行動を１つ行う度に価値関数を更新する手法であるTD法が基である．
+である．TD誤差とは，環境モデルを使用せず，行動を１つ行う度に価値関数を更新する手法であるTD法に基づく概念である．
 TD法では，現在の状態価値関数 $V_\pi(s_t)$ を，現在の報酬 $r_t$ と次の状態価値関数を用いて，サンプル近似を行う．そして，この近似をTD誤差で評価し，状態価値関数を更新することで，適当な状態価値関数を計算し，方策の評価を行う．このように，推定値を使って別の推定値を更新することを ブートストラップ と言う．
 このTD法は，現在の状態価値関数を，1ステップ先の行動で評価するものであり，
 価値関数における分散が低い，すぐ次の報酬しか見ないので安定しやすいという利点と，価値関数の推定が間違っているとバイアスが大きくなるという欠点が存在する．そこで，これは2，3ステップのように，伸ばすことでより良くすることが可能になると考えられる．
@@ -1417,6 +1418,26 @@ KLダイバージェンスに関しては，サンプル近似を行う際に，
 D_{\mathrm{KL}}\left(\pi_\theta \| \pi_{\mathrm{ref}}\right)=\dfrac{\pi_{\mathrm{ref}}(a\mid s)}{\pi_\theta(a\mid s)} -\log \dfrac{\pi_{\mathrm{ref}}(a\mid s)}{\pi_\theta(a\mid s)} -1
 ```
 を使用する．これは，KLの不偏推定量でかつ，非負となる．
+
+GRPO schematic view
+```mermaid
+%%{init: {"flowchart": {"nodeSpacing": 12, "rankSpacing": 10, "htmlLabels": true}, "themeVariables": {"fontSize": "12px"}}}%%
+flowchart LR
+    Q["s"] --> P["Policy"]
+    P["Policy"] --> O["$$a_1,\ldots,a_G$$"]
+
+    O --> M["Reference & Reward"]
+    M --> R["$$r_1,\ldots,r_G$$ & KL"]
+
+    R --> A["$$A_1,\ldots,A_G$$"]
+    A --> P
+
+    classDef trained fill:#fff0bd,stroke:#34495e;
+    classDef frozen fill:#dcecff,stroke:#34495e;
+
+    class P trained;
+    class M frozen;
+ ```
 
 <a id="grpo-code"></a>
 ### コードセクション: Renjuのtrajectory-group GRPO
