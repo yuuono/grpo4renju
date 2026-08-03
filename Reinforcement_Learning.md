@@ -2,6 +2,29 @@
 
 この資料は，強化学習の基本から，Policy Gradient，PPO，GRPO へつなげるためである．最初は一般的な強化学習として説明し，後半で RenjuTransformer にどう対応するかを説明する．
 
+## 目次
+
+- [記法](#notation)
+- [1. 強化学習の問題設定](#rl-problem)
+- [2. 収益と割引率](#return-and-discount)
+- [3. 価値関数と advantage](#value-and-advantage)
+- [4. ベルマン方程式](#bellman-equation)
+- [5. On-policy と Off-policy](#on-policy-and-off-policy)
+- [6. 価値ベースと方策ベース](#value-based-and-policy-based)
+  - [価値ベース](#value-based)
+  - [方策ベース](#policy-based)
+- [7. Policy Gradient](#policy-gradient)
+  - [コードセクション: REINFORCE を最小構成で実装する](#reinforce-code)
+- [8. Generalized Advantage Estimation (GAE)](#gae)
+  - [この最小実装を GAE へ拡張するには](#gae-extension)
+- [9. TRPO](#trpo)
+- [10. PPO](#ppo)
+  - [コードセクション: LineWorld を PPO で学習する](#ppo-code)
+- [11. GRPO](#grpo)
+  - [コードセクション: Renju の trajectory-group GRPO](#grpo-code)
+- [14. まとめ](#summary)
+
+<a id="notation"></a>
 ## 記法
 
 この文書では，対応する確率変数と実現値がある場合，原則として確率変数を大文字，その実現値を対応する小文字で表す．例えば，状態を表す確率変数を $S_t$，実際に観測された状態を $s_t$ と書く．ただし，価値関数 $V_\pi$，行動価値関数 $Q_\pi$，Advantage $A_\pi$，収益 $G_t$ などについては，強化学習で一般的な表記を優先する．同じ文字の場合は，添字，引数，アクセントで意味を区別する．
@@ -43,6 +66,7 @@
 | $r_i(\theta)$                         | GRPO の候補 $i$ に対する新旧方策の確率比              |
 | $D_{\mathrm{KL}}(p\mathbin{\|}q)$     | 確率分布 $p$ と $q$ の KLダイバージェンス            |
 
+<a id="rl-problem"></a>
 ## 1. 強化学習の問題設定
 
 強化学習では，エージェントが環境に対して行動し，その結果として次の状態と報酬を受け取る．エージェントの目的は，将来得られる報酬の合計が大きくなるような行動の選び方を学習することである．基本的な流れは次のようになる．
@@ -74,6 +98,7 @@ S_{t+1}&: 次の状態 \\
 生成される．この書き方がプログラムに馴染む定義であり，こちらを採用する．
 エージェントは現在の状態 $s$ を観測し，方策 $\pi(a \mid s)$によって，行動 $a$ を選択する．そして，MDPを仮定すると，状態遷移確率 $p(s' \mid s, a)$ によって次の状態 $s'$ へと遷移し，報酬関数 $r\left(s,a,s'\right)$ により報酬が得られる．
 
+<a id="return-and-discount"></a>
 ## 2. 収益 と割引率
 
 終端時刻 $T$ までの軌跡 $\tau$ に対して，ある時刻 $t$ から将来得られる報酬の合計をリターンまたは収益と呼び，
@@ -102,6 +127,7 @@ G_{t} = R_{t+1} + \gamma\ G_{t+1}
 - $\gamma = 0$: 次の報酬だけを見る
 割引率を使う理由は，遠い未来の報酬ほど不確実であり，現在の行動との因果関係も弱くなりやすいからである．
 
+<a id="value-and-advantage"></a>
 ## 3. 価値関数 と advantage 
 
 強化学習では，「ある状態がどれくらい良いか」を表す関数を価値関数と呼ぶ．
@@ -143,6 +169,7 @@ A_{\pi}\left(s, a\right) = Q_\pi(s, a) - V_\pi(s)
 $A_{\pi} > 0$ なら，その行動は平均より良い．
 $A_{\pi} < 0$ なら，その行動は平均より悪いということになる．advantage を使うことで，「絶対的に報酬が高いか」ではなく，「その状態の中で相対的に良い行動か」を見やすくなる．単純に 収益 $G_t$ だけを使うと，報酬のばらつきが大きくなりやすい．
 
+<a id="bellman-equation"></a>
 ## 4. ベルマン方程式
 
 状態価値関数は以下のように，「即時報酬」と「次の状態の価値」に分解でき，ベルマン方程式で書ける．
@@ -192,6 +219,7 @@ Q_\pi(s, a)
 ```
 これら二つのベルマン方程式から最適ベルマン方程式を導出し，最適行動または価値関数から，最適方策を求めるのが価値ベースの手法である
 
+<a id="on-policy-and-off-policy"></a>
 ## 5. On-policy と Off-policy
 
 強化学習では，「学習で更新する方策（target policy）」と「学習用データを集める時の行動方策（behavior policy）」という二つの方策が必要となる．強化学習は，方策を更新する際にどの方策から集めたデータを使うかで On-policy （方策オン）と Off-policy（方策オフ）の二つに分けられる．On-policy は，target policy と behavior policy が同じである訓練手法である．つまり，
@@ -209,9 +237,11 @@ Q_\pi(s, a)
 一方で，Off-policy は，target policy と behavior policy が異なる訓練手法である．つまり，現在の方策とは違う方策で集めたデータで訓練を行い，他人の経験から自分を更新する．
 このため，過去の経験を保存し，訓練に再利用可能でデータ効率が良い．
 
+<a id="value-based-and-policy-based"></a>
 ## 6. 価値ベースと方策ベース
 
 強化学習の方法は大きく分けると，価値ベースと方策ベースに分けられる．
+<a id="value-based"></a>
 ### 価値ベース
 価値ベースでは，「行動そのもの」ではなく「その行動を取ったときの良さ・価値」，状態or行動価値関数を学習し，価値が最大になるように行動を選んでいく．
 代表的なものとして，状態 $s$ で行動 $a$ を取ったときの価値関数 $Q(s, a)$ を学習する手法が挙げられる．
@@ -223,11 +253,13 @@ a^* = \arg \underset{a}{\max} Q_\pi(s, a)
 ```
 を計算する．このため，行動候補が離散的で，最善手がはっきりしている問題に強い．しかしながら，行動空間が非常に大きい場合や連続値の場合に扱いづらい．例えば行動空間が $-1 \le a \le 1$ だと，行動 $0.999$ の価値， $0.998 $ の価値を計算する必要があり，困難である．さらに，最適行動決定の際，価値最大化を行うために，価値の過大評価が起きやすく，価値の誤差が行動選択に直接影響してしまう．シンプルな設定では理論的な収束性を議論しやすいという利点もある．代表例は Q-Learning，DQN，SARSA である．
 
+<a id="policy-based"></a>
 ### 方策ベース
 方策ベースでは，行動を選ぶ方策 $\pi_{\theta}$ ，「状態 $s$ で，どの行動 $a$ をどれくらいの確率で選ぶか」を学習している．これにより，最終的に欲しい方策を直接学習できる点， 確率的な方策や連続的な行動を自然に扱える点が優れている点となる．
 一方で，現在の方策 $\pi_{\theta}$ で行動し，得られた報酬で更新を行うため，現在の方策で集めたデータが重要となり，On-policyになりやすく，データ効率が悪くなりやすい．例えば，報酬が大きかったり，小さかったりすると，勾配が振り幅が大きくなるため，学習が不安定となる．そして，
 方策ベースの手法では，基本的に，将来報酬の期待値を最大化するため，どの行動が本当に良かったのかという credit assignment が難しいという点もある．代表例は REINFORCE，actor-critic，PPO，GRPO である．
 
+<a id="policy-gradient"></a>
 ## 7. Policy Gradient
 
 方策ベースの基本は，方策 $\pi_\theta(a \mid s)$ のパラメータ $\theta$ を直接更新することである．
@@ -345,6 +377,7 @@ L_\pi(\theta) = - \mathbb{E}_{\tau \sim \pi_{\theta_{\rm old}}}
 まず，強化学習において，方策 $\pi_\theta$が更新されると，エージェントの行動が変化し，訪れる状態も変わる．従って，収集されるデータそのものが変化する，データ分布がパラメータに依存しているということになる．現在の方策で集めたデータを使い，現在のパラメータで評価したときのみ，その勾配が方策損失を改善する方向を教えてくれるものであり，モデル性能を評価しているものではないということに注意するべき．そして，この方策損失はいくらでも小さくできるかもしれないが，その結果として実際の方策性能は崩壊することがある．
 このように，方策勾配法はOn-policy で，学習が不安定になりやすいことから，安定した更新手法の研究が進んだ．他には，Natural policy gradientという方策の自然勾配を使用する手法や，Trust Region Policy Optimization (TRPO)がある．
 
+<a id="reinforce-code"></a>
 ### コードセクション: REINFORCE　を最小構成で実装する
 
 ここでは，方策勾配法を自分で実装できるようになることを目的として，外部の強化学習環境に依存しない小さな例を紹介すする．
@@ -600,6 +633,7 @@ N=\sum_{i=1}^{M}T_i
 
 コードでは各episodeの `states`，`actions`，`returns` を平坦化してから `.mean()` しているため，この式と一致する．ここで $\bar G$ はバッチ内の全リターンの平均であり，状態に依存しないbaselineである．
 
+<a id="reinforce-two-forward-passes"></a>
 #### なぜ収集時と更新時に方策を2回計算するのか
 
 `collect_episode()` では，状態・行動・報酬だけを保存し，計算グラフを保持しない．そのため，trajectory収集時の推論は `torch.no_grad()` で実行している．更新時の `train_step()` で保存した状態をもう一度方策へ入力し，勾配を持つ `selected_log_probs` を計算する．
@@ -611,6 +645,7 @@ N=\sum_{i=1}^{M}T_i
 
 収集と再計算の間に `optimizer.step()` を実行していないため，どちらも同じ方策 $\pi_\theta$ である．途中で方策を更新する場合は，収集時の方策と更新時の方策が異なってしまうため，vanillaなOn-policy方策勾配としては扱えなくなる．PPOでは，この違いを新旧方策の確率比によって明示的に補正する．
 
+<a id="reinforce-no-argmax"></a>
 #### なぜ行動のサンプリングに `argmax` を使わないのか
 
 方策勾配法では，方策が与える確率分布から行動をサンプリングする必要がある．
@@ -621,6 +656,7 @@ action = distribution.sample()
 
 とすることで，確率が低い行動にも試行機会が残る．`argmax` を使うと常に同じ行動が選ばれやすくなり，未経験の行動の報酬を観測できない．
 
+<a id="reinforce-no-env-backprop"></a>
 #### 環境の状態遷移に逆伝播しなくてよい理由
 
 `env.step(action)` は整数の状態を更新しており，微分可能ではない．しかし，方策勾配法では環境を通して逆伝播する必要はない．勾配を流す対象は，
@@ -631,10 +667,12 @@ selected_log_probs = distribution.log_prob(actions)
 
 で計算した方策の対数確率である．環境から得た報酬は `advantages` としてその対数確率に掛けられ，どの行動を強化または抑制するかを決める．
 
+<a id="reinforce-detach-advantages"></a>
 #### `advantages.detach()` が必要な理由
 
 この例のadvantageは環境報酬だけから計算しているため，もともと勾配を持たない．それでも `detach()` を明示することで，「advantageは方策を更新するための固定ターゲットである」という実装上の境界を表している．Actor-Criticで価値モデルからadvantageを計算する場合は，この切り離しを忘れると方策損失から価値モデルへ意図しない勾配が流れる可能性がある．
 
+<a id="reinforce-actor-critic"></a>
 #### この最小実装をActor-Criticへ拡張するには
 
 現在は，
@@ -664,6 +702,7 @@ total_loss = policy_loss + value_coef * value_loss
 
 として同時に更新することも，optimizerを分けて更新することもできる．この拡張でも，環境の状態遷移そのものに勾配を流す必要はない．
 
+<a id="reinforce-checklist"></a>
 #### 実装時の確認項目
 
 - trajectory収集中にoptimizerを更新していないか
@@ -685,6 +724,7 @@ iteration= 50 ... return=+0.990 P(left)=0.000 P(right)=1.000
 
 
 
+<a id="gae"></a>
 ## 8. Generalized Advantage Estimation (GAE)
 
 実際に，方策損失
@@ -728,6 +768,7 @@ where\  \delta_t & = r_{t+1} + \gamma V_\pi(s_{t+1}) - V_\pi(s_t)\end{align}
 重み係数 $\lambda$ が小さいと，TD法に近づき，低分散・高バイアスで
 重み係数 $\lambda$ が大きいと，MC法に近づき，高分散・低バイアスとなる．
 
+<a id="gae-extension"></a>
 #### この最小実装をGAEへ拡張するには
 
 前節のREINFORCE実装では，
@@ -987,6 +1028,7 @@ GAE:
 
 この最小環境では時間切れも `done=True` として終端扱いしている．実用環境で `terminated` と `truncated` が区別される場合，真の終端である `terminated` ではbootstrapを止め，時間制限による `truncated` では通常 $V(s_{t+1})$ をbootstrapする．
 
+<a id="trpo"></a>
 ## 9. TRPO
 TRPOでは，ある方策 $\tilde{\pi}$と他の方策 $\pi$との収益期待値の差の公式
 ```math
@@ -1025,6 +1067,7 @@ L(\theta) = \mathbb{E}_{\tau \sim \pi_{\theta_{\rm old}}}\left[\frac{\pi_{\theta
 古い方策で集めたデータを使って何回か更新しても，古い方策から離れすぎないようにしている．そのため，データ効率が通常の方策勾配法よりも良くなる．通常の方策勾配法では，すぐに，バッチ内のデータのみに最適化されてしまう．環境から軌跡を集めるのが高コストである強化学習では，よりデータ効率の良い手法が求められる．
 さらに，TRPOでは，訓練における学習率だけではなく，古い方策と新しい方策の距離を KLダイバージェンス $D_{KL}\left( \pi_{\theta_{\rm old}} \| \pi_{\theta}\right)$ が一定以下になるように制約をかけながら，更新することも提案されている．しかしながら，このKL制約付き最適化問題を解くには，ヘッセ行列が必要となるため，計算コストが高いという問題がある．以降のPPOで損失関数に入れることで解決されていく．
 
+<a id="ppo"></a>
 ## 10. PPO
 
 このように，方策ベースの強化学習において，勾配方策をそのまま使うと，1回の更新で方策が大きく変わりすぎることがある．
@@ -1060,6 +1103,7 @@ PPOは基本的に，actor-critic で用いられ，この場合，状態価値�
 PPOにおけるadvantage の推定には，Generalized Advantage Estimation (GAE)が用いられる．
 - Entropy正則化を行うことで、方策が早い段階で特定の行動だけに偏ることを防ぎ、探索を維持することが可能である．
 
+<a id="ppo-code"></a>
 ### コードセクション: LineWorldをPPOで学習する
 
 ここでは，前節までに実装した `LineWorld`，`Policy`，`ValueModel`，`Episode`，`collect_episode()`，`compute_gae()` を使ってPPOへ拡張する．REINFORCEとの重要な違いは，trajectory収集時の対数確率を `old_log_probs` として保存し，同じtrajectoryを複数回更新することである．更新中の方策で再計算した `current_log_probs` との比を取ることで，更新前の方策からどれだけ変化したかを測定する．
@@ -1343,6 +1387,7 @@ flowchart LR
  ```
 
 
+<a id="grpo"></a>
 ## 11. GRPO
 
 GRPO はdeepseek における強化学習で提案された手法である．GRPO は PPO に近い方策更新を行うが，Critic による価値推定の代わりに，グループ内の相対評価で advantage を作る．同じ入力や同じ状態から $G$ 個の出力をサンプルする．
@@ -1373,6 +1418,7 @@ D_{\mathrm{KL}}\left(\pi_\theta \| \pi_{\mathrm{ref}}\right)=\dfrac{\pi_{\mathrm
 ```
 を使用する．これは，KLの不偏推定量でかつ，非負となる．
 
+<a id="grpo-code"></a>
 ### コードセクション: Renjuのtrajectory-group GRPO
 
 ここでは，`src/renju_transformer/grpo.py` に実装されているtrajectory-group GRPOを，実際の処理順に沿って説明する．
@@ -1381,6 +1427,7 @@ D_{\mathrm{KL}}\left(\pi_\theta \| \pi_{\mathrm{ref}}\right)=\dfrac{\pi_{\mathrm
 各trajectoryの報酬は，policyが打った手の局所報酬の合計と終局勝敗bonusから作る．
 同じgroup内でtrajectory報酬を標準化し，そのtrajectoryでpolicyが打った全着手へ同じadvantageを割り当てる．
 
+<a id="grpo-trajectory-values"></a>
 #### 1. trajectoryに保存する値
 
 実装で使用するデータクラスは次の形である．
@@ -1429,6 +1476,7 @@ trajectory-groupでは1局面につき1手だけサンプリングするため�
 Referenceのlog probabilityはtrajectoryには保存しない．固定reference modelから，GRPO lossを計算するたびに同じ状態・同じ行動について再計算する．
 一方，新旧policyの比率に必要な`old_log_prob`はtrajectory生成時に保存し，更新中は固定する．
 
+<a id="grpo-policy-side"></a>
 #### 2. policy担当色と対戦相手を決める
 
 `resolve_policy_players()`は，設定からtrajectory groupを作るpolicy担当色を返す．
@@ -1459,6 +1507,7 @@ group 2: policyが白，referenceが黒
 
 `grpo.step_group.opponent=reference`では，policy担当色以外の手を固定reference modelが打つ．`opponent=self`では両方の色をpolicy modelが打つが，`learn=True`になるのは指定したpolicy担当色の手だけである．
 
+<a id="grpo-sample-action"></a>
 #### 3. 合法手から1手をサンプリングする
 
 着手のサンプリングでは，非合法手のlogitを`-inf`へ置き換えてからsoftmaxを計算する．
@@ -1497,6 +1546,7 @@ def sample_actions_from_logits(
 
 trajectory-groupからは`sample_count=1`で呼ばれる．したがって各手番でpolicyまたはreferenceから1手をサンプリングし，その手をそのまま盤面へ反映する．
 
+<a id="grpo-generate-trajectory"></a>
 #### 4. 1本のtrajectoryを生成する
 
 1本の対局生成は`rollout_policy_episode()`が担当する．
@@ -1584,6 +1634,7 @@ def rollout_policy_episode(
 
 各手の`local_reward`は`GrpoRewardEvaluator`が計算する．設定に応じて，合法性，即勝ち・即負け，相手の即勝ちのブロック，四や開三，TSSによる強制勝ち・強制負けなどが含まれる．
 
+<a id="grpo-trajectory-reward"></a>
 #### 5. trajectory報酬を作る
 
 trajectory-groupの比較に使う報酬は，policy担当色が実際に打った手の局所報酬だけを合計し，最後に終局結果を1回加えたものである．
@@ -1634,6 +1685,7 @@ policy担当色が敗北: -1
 
 が局所報酬の合計へ加わる．reference担当色が打った手の局所報酬はstepには保存されるが，trajectoryの`total_reward`には含めない．
 
+<a id="grpo-generate-group"></a>
 #### 6. 同じ開始盤面からG本を生成する
 
 学習ループでは，policyとreferenceを評価modeにしてから，同じ開始盤面・同じpolicy担当色で`rollout_policy_episode()`をG回呼び出す．
@@ -1665,6 +1717,7 @@ for policy_player in policy_players:
 
 1回のoptimizer更新では，`grpo.step_group.prompts_per_step`個の開始盤面を処理する．`learning_player=both`なら，各開始盤面について黒policy groupと白policy groupの両方を生成する．
 
+<a id="grpo-group-advantage"></a>
 #### 7. group-relative advantageを計算する
 
 同じ開始盤面かつ同じpolicy担当色のG本について，`total_reward`を標準化する．
@@ -1697,6 +1750,7 @@ R(\tau_i)-\mu_R
 
 である．G本の報酬がすべて同じ場合，標準偏差は0になり，全trajectoryのadvantageも0になる．このgroupからpolicy gradientは得られないが，KL項とentropy項は計算される．
 
+<a id="grpo-assign-advantage"></a>
 #### 8. policyの着手へadvantageを割り当てる
 
 `flatten_trajectories()`は各trajectoryのadvantageを，そのtrajectoryで`learn=True`となっている全stepへ同じ値で割り当てる．
@@ -1721,6 +1775,7 @@ referenceが打ったstepは盤面を進めるためだけに使い，GRPO更新
 
 また，trajectory長による重みの補正は行っていない．全学習対象stepを後段のlossで単純平均するため，policy着手数の多い長いtrajectoryほど，optimizer更新に含まれる項数が多くなる．
 
+<a id="grpo-loss"></a>
 #### 9. GRPO lossを計算する
 
 更新時には，全stepの盤面をまとめてmodelへ入力する．current policyと固定referenceのlog probabilityは，同じ合法手maskと変換していない生logitsから計算する．
@@ -1817,6 +1872,7 @@ loss = (
 )
 ```
 
+<a id="grpo-multiple-epochs"></a>
 #### 10. 同じ収集データを複数epoch更新する
 
 rollout後，policyを`train()`へ戻し，複数prompt・複数groupから集めた全学習対象stepを1つのflat batchへまとめる．現在の実装はminibatchへ分割せず，flat batch全体を各update epochで使用する．
@@ -1853,6 +1909,7 @@ for _ in range(int(cfg.grpo.update_epochs)):
 
 モデルのdropout既定値は0であり，GRPOモデルをcheckpointから再構築するときも現在の`cfg.model.dropout`を使う．デフォルト設定では，rollout時の`eval()`と更新時の`train()`でdropoutによる確率変動は生じない．そのため，最初のoptimizer更新前は，収集時と更新時のpolicyが同じなら確率比は1になる．
 
+<a id="grpo-overview"></a>
 #### 11. 処理全体の対応
 
 | GRPOの処理 | 実装 |
@@ -1888,6 +1945,7 @@ current policy / old policyの比率を計算
 clipped policy loss + KL - entropyでpolicyを更新
 ```
 
+<a id="summary"></a>
 ## 14. まとめ
 
 強化学習では，将来得られる報酬の合計を最大化するように方策を学習する．価値ベースは価値関数を学習し，方策ベースは行動を選ぶ確率分布そのものを学習する．
