@@ -1079,7 +1079,7 @@ L(\theta) = \mathbb{E}_{\tau \sim \pi_{\theta_{\rm old}}}\left[\frac{\pi_{\theta
 ## 10. PPO
 
 このように，方策ベースの強化学習において，勾配方策をそのまま使うと，1回の更新で方策が大きく変わりすぎることがある．
-そして，方策が急に変わると，集めた On-policy データがすぐ古くなり，学習が不安定になると点がある．TRPOの良いアイデアを引き継ぎながら，1次精度の最適化手法で提案されたのが Proximal Policy Optimization (PPO)である．
+そして，方策が急に変わると，集めた On-policy データがすぐ古くなり，学習が不安定になる点がある．TRPOの良いアイデアを引き継ぎながら，1次精度の最適化手法で提案されたのが Proximal Policy Optimization (PPO)である．
 TRPOのアイデアである，更新前の方策 $\pi_{\theta_{\rm old}}$ と，更新中の方策 $\pi_\theta$ の確率比
 ```math
 \rho_t(\theta)
@@ -1431,12 +1431,12 @@ GRPO schematic view
 %%{init: {"flowchart": {"nodeSpacing": 12, "rankSpacing": 10, "htmlLabels": true}, "themeVariables": {"fontSize": "12px"}}}%%
 flowchart LR
     Q["s"] --> P["Policy"]
-    P["Policy"] --> O["$$a_1,\ldots,a_G$$"]
+    P["Policy"] --> O["$a_1,\ldots,a_G$"]
 
     O --> M["Reference & Reward"]
-    M --> R["$$r_1,\ldots,r_G$$ & KL"]
+    M --> R["$r_1,\ldots,r_G$ & KL"]
 
-    R --> A["$$A_1,\ldots,A_G$$"]
+    R --> A["$A_1,\ldots,A_G$"]
     A --> P
 
     classDef trained fill:#fff0bd,stroke:#34495e;
